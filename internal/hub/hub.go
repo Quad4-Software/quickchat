@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: 0BSD
+
+// Package hub relays room presence and WebRTC signaling over websocket.
+// Chat messages and file transfers never touch the server: they flow
+// peer to peer over RTCDataChannel once signaling completes.
 package hub
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,7 +20,6 @@ const (
 	sendBuffer      = 64
 	writeTimeout    = 10 * time.Second
 	maxRoomPeers    = 64
-	maxNonceBytes   = 32
 )
 
 type Peer struct {
@@ -25,49 +27,25 @@ type Peer struct {
 	Name string `json:"name"`
 }
 
-type Attachment struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-	Mime string `json:"mime"`
-}
-
-type Message struct {
-	ID         string      `json:"id"`
-	Peer       Peer        `json:"peer"`
-	Body       string      `json:"body,omitempty"`
-	Attachment *Attachment `json:"attachment,omitempty"`
-	Nonce      string      `json:"nonce,omitempty"`
-	Ts         int64       `json:"ts"`
-}
-
 type envelope map[string]any
 
 type inbound struct {
-	Type       string `json:"type"`
-	Body       string `json:"body"`
-	Attachment string `json:"attachment"`
-	Nonce      string `json:"nonce"`
-	Typing     bool   `json:"typing"`
+	Type string          `json:"type"`
+	To   string          `json:"to"`
+	Data json.RawMessage `json:"data"`
 }
 
-// LookupAttachment resolves an attachment ID to its metadata for embedding
-// in outbound chat messages.
-type LookupAttachment func(room, id string) *Attachment
-
 type Hub struct {
-	lookupAttach LookupAttachment
-
 	mu    sync.Mutex
 	rooms map[string]map[*Client]struct{}
 	ids   uint64
 }
 
-func New(lookup LookupAttachment) *Hub {
-	return &Hub{lookupAttach: lookup, rooms: make(map[string]map[*Client]struct{})}
+func New() *Hub {
+	return &Hub{rooms: make(map[string]map[*Client]struct{})}
 }
 
-// PeerCount reports connected chat clients in a room.
+// PeerCount reports connected clients in a room.
 func (h *Hub) PeerCount(room string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -173,12 +151,9 @@ func (c *Client) readLoop() {
 		if !parseInbound(data, &in) {
 			continue
 		}
-		switch in.Type {
-		case "chat":
-			c.hub.chat(c, in)
-		case "typing":
-			c.hub.broadcast(c.room, c, envelope{
-				"type": "typing", "peer": c.Peer, "typing": in.Typing})
+		if in.Type == "signal" && in.To != "" && validPayload(in.Data) {
+			c.hub.relay(c, in.To, envelope{
+				"type": "signal", "from": c.Peer, "data": in.Data})
 		}
 	}
 }
@@ -188,35 +163,32 @@ func parseInbound(data []byte, in *inbound) bool {
 	return json.Unmarshal(data, in) == nil
 }
 
-func (h *Hub) chat(c *Client, in inbound) {
-	msg := Message{Peer: c.Peer, Ts: time.Now().UnixMilli()}
-	if in.Attachment != "" && h.lookupAttach != nil {
-		msg.Attachment = h.lookupAttach(c.room, in.Attachment)
-		if msg.Attachment == nil {
+// validPayload rejects absent and json null payloads so peers always
+// receive a real object to parse.
+func validPayload(d json.RawMessage) bool {
+	return len(d) > 0 && string(d) != "null"
+}
+
+// relay forwards a signaling payload to one peer in the sender's room.
+func (h *Hub) relay(from *Client, to string, ev envelope) {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.rooms[from.room] {
+		if c.ID == to {
+			select {
+			case c.send <- data:
+			default:
+				go func() {
+					_ = c.conn.Close(websocket.StatusPolicyViolation, "slow consumer")
+				}()
+			}
 			return
 		}
 	}
-	msg.Body = truncate(strings.TrimSpace(in.Body), 4096)
-	msg.Nonce = truncate(in.Nonce, maxNonceBytes)
-	if msg.Body == "" && msg.Attachment == nil {
-		return
-	}
-	msg.ID = msgID(c.room, c.ID, msg.Ts)
-	h.broadcast(c.room, nil, envelope{"type": "chat", "message": msg})
-}
-
-// msgID must stay unique per sender per millisecond; the client dedups
-// on it when the optimistic echo arrives.
-func msgID(room, peer string, ts int64) string {
-	// #nosec G115 -- unix milliseconds are always positive
-	return room + "-" + peerID(uint64(ts)) + "-" + peer
-}
-
-func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }
 
 func (h *Hub) broadcast(room string, except *Client, ev envelope) {

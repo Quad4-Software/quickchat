@@ -29,6 +29,8 @@ export default defineConfig({
       QUICKCHAT_RATE_CREATE: '600',
       QUICKCHAT_RATE_ACTION: '600',
       QUICKCHAT_RATE_SOCKET: '600',
+      // tiny cap so the oversize test can exercise the client check
+      QUICKCHAT_MAX_FILE: '1024',
     },
     timeout: 60_000,
   },

@@ -9,16 +9,22 @@ import (
 )
 
 type Config struct {
-	Addr           string
-	DataDir        string
-	LiveKitURL     string
-	LiveKitAPIKey  string
-	LiveKitSecret  string
-	PprofAddr      string
-	RoomTTL        time.Duration
-	AttachmentTTL  time.Duration
-	MaxUploadBytes int64
-	TrustedProxy   bool
+	Addr          string
+	DataDir       string
+	LiveKitURL    string
+	LiveKitAPIKey string
+	LiveKitSecret string
+	PprofAddr     string
+	RoomTTL       time.Duration
+	TrustedProxy  bool
+
+	// ICEServers are advertised to clients for the p2p mesh. Empty means
+	// host candidates only, which covers lan and overlay networks. Add
+	// stun: or turn: urls for nat traversal across the open internet.
+	ICEServers []string
+	// MaxFileBytes caps peer-to-peer file transfers. Files live in memory
+	// at both ends so this also bounds memory per transfer.
+	MaxFileBytes int64
 
 	// per-ip token buckets, requests per minute. Burst is half the rate.
 	RateCreatePerMin int
@@ -28,16 +34,17 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Addr:           env("QUICKCHAT_ADDR", ":8080"),
-		DataDir:        env("QUICKCHAT_DATA", "./data"),
-		LiveKitURL:     os.Getenv("LIVEKIT_URL"),
-		LiveKitAPIKey:  os.Getenv("LIVEKIT_API_KEY"),
-		LiveKitSecret:  os.Getenv("LIVEKIT_API_SECRET"),
-		PprofAddr:      os.Getenv("QUICKCHAT_PPROF"),
-		RoomTTL:        durEnv("QUICKCHAT_ROOM_TTL", 7*24*time.Hour),
-		AttachmentTTL:  durEnv("QUICKCHAT_ATTACHMENT_TTL", 24*time.Hour),
-		MaxUploadBytes: int64Env("QUICKCHAT_MAX_UPLOAD", 64<<20),
-		TrustedProxy:   boolEnv("QUICKCHAT_TRUSTED_PROXY"),
+		Addr:          env("QUICKCHAT_ADDR", ":8080"),
+		DataDir:       env("QUICKCHAT_DATA", "./data"),
+		LiveKitURL:    os.Getenv("LIVEKIT_URL"),
+		LiveKitAPIKey: os.Getenv("LIVEKIT_API_KEY"),
+		LiveKitSecret: os.Getenv("LIVEKIT_API_SECRET"),
+		PprofAddr:     os.Getenv("QUICKCHAT_PPROF"),
+		RoomTTL:       durEnv("QUICKCHAT_ROOM_TTL", 7*24*time.Hour),
+		TrustedProxy:  boolEnv("QUICKCHAT_TRUSTED_PROXY"),
+
+		ICEServers:   listEnv("QUICKCHAT_ICE_SERVERS"),
+		MaxFileBytes: int64Env("QUICKCHAT_MAX_FILE", 64<<20),
 
 		RateCreatePerMin: intEnv("QUICKCHAT_RATE_CREATE", 12),
 		RateActionPerMin: intEnv("QUICKCHAT_RATE_ACTION", 60),
@@ -50,6 +57,16 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func listEnv(key string) []string {
+	out := []string{}
+	for _, v := range strings.Split(os.Getenv(key), ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func durEnv(key string, fallback time.Duration) time.Duration {

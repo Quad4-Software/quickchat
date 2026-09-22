@@ -1,9 +1,10 @@
 # quickchat
 
 Ephemeral chat rooms with LiveKit voice and video. One Go binary serves
-the React web client, realtime chat and attachments over WebSocket, and
-mints LiveKit access tokens. Room metadata persists in SQLite, chat
-messages live in memory only, attachments expire on disk.
+the React web client, a websocket for presence and WebRTC signaling, and
+mints LiveKit access tokens. Chat messages and file transfers go peer to
+peer over WebRTC data channels and never touch the server. SQLite keeps
+room ids and timestamps only.
 
 ## Run
 
@@ -17,19 +18,30 @@ or from source:
     LIVEKIT_API_SECRET=secret \
     ./bin/quickchat
 
-Open http://localhost:8080.
+Open http://localhost:8080. API docs live at /docs.
+
+## Privacy model
+
+- The server stores room ids and creation timestamps only.
+- Chat, typing and files flow over RTCDataChannel between browsers.
+  Data channels are DTLS encrypted end to end.
+- Files are chunked in memory at both ends. Nothing is written to disk
+  or logged beyond the request log.
+- Room links carry the media encryption key in the URL fragment
+  (#e2ee=...). The key never reaches the server, so LiveKit media is
+  end-to-end encrypted between participants.
 
 ## Configuration
 
 Env only. Defaults shown:
 
     QUICKCHAT_ADDR=:8080            listen address
-    QUICKCHAT_DATA=./data           sqlite + attachment storage
+    QUICKCHAT_DATA=./data           sqlite room metadata
     QUICKCHAT_ROOM_TTL=168h         room expiry (7d)
-    QUICKCHAT_ATTACHMENT_TTL=24h    attachment expiry
-    QUICKCHAT_MAX_UPLOAD=67108864   upload limit (64 MiB)
+    QUICKCHAT_MAX_FILE=67108864     p2p file transfer limit (64 MiB)
+    QUICKCHAT_ICE_SERVERS=          comma separated stun/turn urls
     QUICKCHAT_RATE_CREATE=12        room creates per minute per ip
-    QUICKCHAT_RATE_ACTION=60        uploads and token mints per minute per ip
+    QUICKCHAT_RATE_ACTION=60        token mints per minute per ip
     QUICKCHAT_RATE_SOCKET=30        ws connects per minute per ip
     QUICKCHAT_PPROF=                pprof listen address, off when empty
     QUICKCHAT_TRUSTED_PROXY=        trust X-Forwarded-For from the proxy
@@ -38,12 +50,19 @@ Env only. Defaults shown:
     LIVEKIT_API_SECRET=
 
 Without the LIVEKIT_* variables the app still runs, voice and video are
-disabled and the room page falls back to chat only.
+disabled and the room falls back to chat only.
 
-Room links carry the media encryption key in the URL fragment
-(#e2ee=...). The key never reaches the server, so LiveKit media is
-end-to-end encrypted between room participants. Joining by bare room id
-without the fragment falls back to standard DTLS-SRTP.
+## Networking
+
+The p2p mesh negotiates ICE between browsers:
+
+- LAN or overlay networks (Tailscale, WireGuard, Netbird) work with zero
+  configuration since peers reach each other on host candidates.
+- Across the open internet, set QUICKCHAT_ICE_SERVERS to a STUN server,
+  for example `stun:stun.l.google.com:19302`, and to a TURN server for
+  restrictive NATs: `turn:turn.example.com:3478?transport=udp`.
+- TURN relays see packet metadata and carry the traffic, but payloads
+  stay DTLS encrypted. Prefer direct paths when privacy matters.
 
 ## Deploy
 

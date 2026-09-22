@@ -1,4 +1,4 @@
-import type { AttachmentMeta, LiveKitGrant, RoomInfo } from './types'
+import type { LiveKitGrant, RoomInfo } from './types'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
@@ -19,16 +19,4 @@ export function getRoom(id: string): Promise<RoomInfo> {
 
 export function livekitToken(room: string, name: string): Promise<LiveKitGrant> {
   return req(`/api/rooms/${room}/token?name=${encodeURIComponent(name)}`)
-}
-
-export function uploadAttachment(room: string, file: File): Promise<AttachmentMeta> {
-  return req(`/api/rooms/${room}/attachments?name=${encodeURIComponent(file.name)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  })
-}
-
-export function attachmentUrl(room: string, id: string): string {
-  return `/api/rooms/${room}/attachments/${id}`
 }

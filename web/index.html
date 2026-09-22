@@ -4,12 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0a0b" />
     <meta
       name="description"
-      content="quickchat: ephemeral chat rooms with live voice and video"
+      content="quickchat: ephemeral rooms with peer to peer chat and live voice and video"
     />
     <title>quickchat</title>
     <link rel="icon" type="image/svg+xml" href="/quad4-mark.svg" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
   </head>
   <body>
     <!-- static landing skeleton, painted before the js bundle loads;
@@ -18,36 +20,24 @@
       <div class="relative flex h-full items-center justify-center px-4">
         <div class="relative w-full max-w-sm">
           <div class="flex flex-col items-center gap-3 pb-8">
-            <svg
-              viewBox="-1.16 -1.16 2.32 2.32"
-              width="48"
-              height="48"
-              class="text-emphasis"
-              fill="currentColor"
+            <span
               role="img"
               aria-label="Quad4"
-            >
-              <g fill-rule="nonzero">
-                <path
-                  d="M 0.10097 -0.97999 L 0.09859 -0.69728 L 0.39556 -0.52385 L 0.09859 -0.35517 L 0.09859 -0.11522 L 0.83983 -0.54286 Z"
-                />
-                <path
-                  d="M -0.09859 -0.97762 L -0.83745 -0.54523 L -0.10097 -0.11760 L -0.09622 -0.35517 L -0.39081 -0.52385 L -0.09622 -0.69728 Z"
-                />
-                <path
-                  d="M -0.86121 -0.49059 L -0.86121 0.36943 L -0.62363 0.23163 L -0.62126 -0.10810 L -0.32666 0.06533 L -0.11285 -0.05821 Z"
-                />
-                <path
-                  d="M 0.86121 -0.49059 L 0.11998 -0.05821 L 0.33142 0.06533 L 0.62363 -0.10572 L 0.62601 0.23163 L 0.86121 0.36705 Z"
-                />
-                <path
-                  d="M 0.07008 0.19362 L 0.07008 0.98237 L 0.79231 0.54761 L 0.56424 0.41219 L 0.26252 0.59750 L 0.26014 0.30291 Z"
-                />
-                <path
-                  d="M -0.07008 0.19600 L -0.25777 0.30291 L -0.26014 0.59750 L -0.56186 0.41219 L -0.78993 0.54761 L -0.07008 0.97999 Z"
-                />
-              </g>
-            </svg>
+              style="
+                display: inline-block;
+                width: 48px;
+                height: 48px;
+                background-color: #e9e9ec;
+                -webkit-mask-image: url(/quad4-mark.svg);
+                mask-image: url(/quad4-mark.svg);
+                -webkit-mask-size: contain;
+                mask-size: contain;
+                -webkit-mask-repeat: no-repeat;
+                mask-repeat: no-repeat;
+                -webkit-mask-position: center;
+                mask-position: center;
+              "
+            ></span>
             <h1 class="text-xl font-semibold tracking-tight text-emphasis">quickchat</h1>
             <p class="text-sm text-muted-foreground">
               ephemeral rooms with live voice and video

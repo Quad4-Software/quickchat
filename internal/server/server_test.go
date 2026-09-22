@@ -2,16 +2,15 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"quad4/quickchat/internal/attach"
 	"quad4/quickchat/internal/config"
 	"quad4/quickchat/internal/hub"
 	"quad4/quickchat/internal/rooms"
@@ -19,7 +18,7 @@ import (
 )
 
 func testConfig() config.Config {
-	return config.Config{MaxUploadBytes: 1 << 20}
+	return config.Config{MaxFileBytes: 1 << 20}
 }
 
 func newTestServer(t *testing.T, cfg config.Config) *httptest.Server {
@@ -30,13 +29,9 @@ func newTestServer(t *testing.T, cfg config.Config) *httptest.Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	atts, err := attach.New(filepath.Join(dir, "atts"), time.Hour, 1<<20)
-	if err != nil {
-		t.Fatal(err)
-	}
 	rm := rooms.NewManager(st, time.Hour)
-	h := hub.New(nil)
-	srv := New(cfg, rm, h, atts, st.Ping)
+	h := hub.New()
+	srv := New(cfg, rm, h, st.Ping)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts
@@ -86,9 +81,22 @@ func TestRoomEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res.Body.Close()
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	var info struct {
+		ID          string   `json:"id"`
+		Peers       int      `json:"peers"`
+		Livekit     bool     `json:"livekit"`
+		ICEServers  []string `json:"iceServers"`
+		MaxFileSize int64    `json:"maxFileSize"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+		t.Fatal(err)
+	}
+	if info.ID != id || info.MaxFileSize != 1<<20 {
+		t.Fatalf("bad room info: %+v", info)
 	}
 
 	res, err = http.Get(ts.URL + "/api/rooms/doesnotexist")
@@ -98,6 +106,27 @@ func TestRoomEndpoints(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", res.StatusCode)
+	}
+}
+
+func TestRoomInfoICEServers(t *testing.T) {
+	cfg := testConfig()
+	cfg.ICEServers = []string{"stun:stun.example.com:3478"}
+	ts := newTestServer(t, cfg)
+	id := createRoom(t, ts)
+	res, err := http.Get(ts.URL + "/api/rooms/" + id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var info struct {
+		ICEServers []string `json:"iceServers"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+		t.Fatal(err)
+	}
+	if len(info.ICEServers) != 1 || info.ICEServers[0] != "stun:stun.example.com:3478" {
+		t.Fatalf("ice servers not advertised: %+v", info)
 	}
 }
 
@@ -143,47 +172,34 @@ func TestTokenWithLiveKit(t *testing.T) {
 	}
 }
 
-func TestAttachmentRoundtrip(t *testing.T) {
+func TestOpenAPISpec(t *testing.T) {
 	ts := newTestServer(t, testConfig())
-	id := createRoom(t, ts)
-
-	res, err := http.Post(
-		ts.URL+"/api/rooms/"+id+"/attachments?name=f.txt",
-		"text/plain",
-		bytes.NewReader([]byte("payload")),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m struct {
-		ID string `json:"id"`
-	}
-	json.NewDecoder(res.Body).Decode(&m)
-	res.Body.Close()
-	if m.ID == "" {
-		t.Fatal("no attachment id")
-	}
-
-	res, err = http.Get(ts.URL + "/api/rooms/" + id + "/attachments/" + m.ID)
+	res, err := http.Get(ts.URL + "/api/openapi.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
-	if string(body) != "payload" {
-		t.Fatalf("bad body: %q", body)
+	if !strings.Contains(string(body), "openapi: 3.1.0") {
+		t.Fatal("spec not served")
 	}
-	if res.Header.Get("Content-Type") != "text/plain" {
-		t.Fatalf("bad content type: %s", res.Header.Get("Content-Type"))
+	if ct := res.Header.Get("Content-Type"); ct != "application/yaml" {
+		t.Fatalf("bad content type: %s", ct)
 	}
+}
 
-	// unknown attachment 404s
-	res, err = http.Get(ts.URL + "/api/rooms/" + id + "/attachments/zzz")
+func TestAttachmentEndpointsGone(t *testing.T) {
+	ts := newTestServer(t, testConfig())
+	id := createRoom(t, ts)
+	res, err := http.Post(ts.URL+"/api/rooms/"+id+"/attachments?name=f.txt",
+		"text/plain", strings.NewReader("x"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	if res.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", res.StatusCode)
+	// the spa fallback serves index.html for unknown paths, which is fine:
+	// the point is no upload is stored. Assert it is not a 201 json meta.
+	if res.StatusCode == http.StatusCreated {
+		t.Fatal("attachment upload endpoint should not exist")
 	}
 }

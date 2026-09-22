@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: quickchat
+  version: "1.0.0"
+  license:
+    name: 0BSD
+  description: |
+    Ephemeral chat rooms with peer-to-peer messaging and file transfer,
+    plus optional LiveKit voice and video.
+
+    The server only stores room ids and creation timestamps in sqlite.
+    Chat messages and attachments flow directly between browsers over
+    WebRTC data channels negotiated through the signaling socket. Nothing
+    said or sent is persisted.
+
+    ## Realtime protocol
+
+    `GET /ws/rooms/{room}?name={name}` upgrades to a websocket used for
+    presence and WebRTC signaling.
+
+    Server to client events:
+
+    - `welcome` `{self: Peer, peers: Peer[]}` — sent once on connect
+    - `peer_joined` `{peer: Peer}` — a peer joined the room
+    - `peer_left` `{peer: Peer}` — a peer left the room
+    - `signal` `{from: Peer, data: object}` — relayed SDP or ICE payload
+
+    Client to server frames:
+
+    - `signal` `{to: string, data: object}` — relay `data` to peer `to`
+
+    Chat, typing indicators, and file transfer run over RTCDataChannel
+    between peers. The newcomer creates offers to every existing peer;
+    a single ordered data channel per pair carries JSON messages
+    (`chat`, `typing`, `file-meta`) and binary file chunks on a
+    per-transfer channel named `file-<id>`.
+
+    Room share links may carry `#e2ee=<key>` in the URL fragment. The key
+    enables LiveKit end-to-end media encryption and never reaches the
+    server.
+tags:
+  - name: rooms
+    description: Ephemeral room lifecycle
+  - name: realtime
+    description: Websocket presence and signaling
+  - name: ops
+    description: Health and introspection
+paths:
+  /api/rooms:
+    post:
+      tags: [rooms]
+      summary: Create a room
+      description: Creates an ephemeral room and returns its id. Rate limited per client IP.
+      operationId: createRoom
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: string
+                    example: 7o5gwt2hmu
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /api/rooms/{room}:
+    get:
+      tags: [rooms]
+      summary: Room info
+      description: Returns live room state and client configuration hints.
+      operationId: getRoom
+      parameters:
+        - $ref: "#/components/parameters/roomId"
+      responses:
+        "200":
+          description: Room state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomInfo"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/rooms/{room}/token:
+    get:
+      tags: [rooms]
+      summary: Mint a LiveKit token
+      description: |
+        Returns a short-lived LiveKit access token for the room. Only
+        available when the server operator configured LIVEKIT_URL,
+        LIVEKIT_API_KEY and LIVEKIT_API_SECRET.
+      operationId: livekitToken
+      parameters:
+        - $ref: "#/components/parameters/roomId"
+        - name: name
+          in: query
+          description: Display name, max 32 chars
+          schema:
+            type: string
+            maxLength: 32
+            default: anon
+      responses:
+        "200":
+          description: LiveKit grant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveKitGrant"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: LiveKit not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ws/rooms/{room}:
+    get:
+      tags: [realtime]
+      summary: Signaling websocket
+      description: |
+        Upgrades to websocket. Carries presence events and relays
+        `signal` frames between peers. Chat and files do not transit
+        this socket.
+      operationId: roomSocket
+      parameters:
+        - $ref: "#/components/parameters/roomId"
+        - name: name
+          in: query
+          description: Display name, max 32 chars
+          schema:
+            type: string
+            maxLength: 32
+            default: anon
+      responses:
+        "101":
+          description: Websocket upgrade
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /healthz:
+    get:
+      tags: [ops]
+      summary: Liveness probe
+      operationId: healthz
+      responses:
+        "200":
+          description: Process is alive
+  /readyz:
+    get:
+      tags: [ops]
+      summary: Readiness probe
+      description: Fails while the sqlite store is unreachable.
+      operationId: readyz
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Store unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  parameters:
+    roomId:
+      name: room
+      in: path
+      required: true
+      description: Room id, lowercase base32
+      schema:
+        type: string
+        pattern: "^[a-z2-7]+$"
+        example: 7o5gwt2hmu
+  schemas:
+    Peer:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          example: aaaaaaaaac
+        name:
+          type: string
+          example: alice
+    RoomInfo:
+      type: object
+      required: [id, peers, livekit, iceServers, maxFileSize]
+      properties:
+        id:
+          type: string
+        peers:
+          type: integer
+          description: Currently connected chat clients
+        livekit:
+          type: boolean
+          description: Whether voice and video are enabled server-side
+        iceServers:
+          type: array
+          items:
+            type: string
+          description: STUN or TURN urls for the p2p mesh, empty means host candidates only
+          example: ["stun:stun.example.com:3478"]
+        maxFileSize:
+          type: integer
+          format: int64
+          description: Maximum p2p file transfer size in bytes
+    LiveKitGrant:
+      type: object
+      required: [url, token, identity]
+      properties:
+        url:
+          type: string
+          example: wss://livekit.example.com
+        token:
+          type: string
+          description: Signed LiveKit JWT
+        identity:
+          type: string
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Rate limited
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

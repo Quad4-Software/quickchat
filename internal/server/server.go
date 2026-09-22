@@ -4,8 +4,8 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	_ "embed"
 	"encoding/json"
-	"errors"
 	"io/fs"
 	"net"
 	"net/http"
@@ -16,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"quad4/quickchat/internal/attach"
 	"quad4/quickchat/internal/config"
 	"quad4/quickchat/internal/hub"
 	"quad4/quickchat/internal/lktoken"
@@ -25,23 +24,24 @@ import (
 	"quad4/quickchat/web"
 )
 
+//go:embed openapi.yaml
+var openapiSpec string
+
 type Server struct {
 	cfg    config.Config
 	rooms  *rooms.Manager
 	hub    *hub.Hub
-	atts   *attach.Store
 	ping   func(ctx context.Context) error
 	create *ratelimit.Limiter
 	action *ratelimit.Limiter
 	socket *ratelimit.Limiter
 }
 
-func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, atts *attach.Store, ping func(ctx context.Context) error) *Server {
+func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, ping func(ctx context.Context) error) *Server {
 	return &Server{
 		cfg:    cfg,
 		rooms:  rm,
 		hub:    h,
-		atts:   atts,
 		ping:   ping,
 		create: ratelimit.New(rate(cfg.RateCreatePerMin, 12), burst(rate(cfg.RateCreatePerMin, 12))),
 		action: ratelimit.New(rate(cfg.RateActionPerMin, 60), burst(rate(cfg.RateActionPerMin, 60))),
@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 	r.Get("/readyz", s.readyz)
+	r.Get("/api/openapi.yaml", s.openapi)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/rooms", s.createRoom)
@@ -83,8 +84,6 @@ func (s *Server) Handler() http.Handler {
 			r.Use(s.requireRoom)
 			r.Get("/", s.getRoom)
 			r.With(s.limited(s.action)).Get("/token", s.livekitToken)
-			r.With(s.limited(s.action)).Post("/attachments", s.upload)
-			r.Get("/attachments/{att}", s.download)
 		})
 	})
 	r.With(s.limited(s.socket)).Get("/ws/rooms/{room}", s.chatWS)
@@ -150,6 +149,13 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	http.ServeContent(w, r, "openapi.yaml", time.Time{},
+		strings.NewReader(openapiSpec))
+}
+
 func (s *Server) requireRoom(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.rooms.Exists(r.Context(), chi.URLParam(r, "room")) {
@@ -176,9 +182,11 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getRoom(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "room")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":      id,
-		"peers":   s.hub.PeerCount(id),
-		"livekit": s.cfg.LiveKitURL != "",
+		"id":          id,
+		"peers":       s.hub.PeerCount(id),
+		"livekit":     s.cfg.LiveKitURL != "",
+		"iceServers":  s.cfg.ICEServers,
+		"maxFileSize": s.cfg.MaxFileBytes,
 	})
 }
 
@@ -214,47 +222,6 @@ func randSuffix() string {
 		out[i] = a[b[i%3]&31]
 	}
 	return string(out)
-}
-
-func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
-	room := chi.URLParam(r, "room")
-	name := sanitizeName(r.URL.Query().Get("name"))
-	mime := r.Header.Get("Content-Type")
-	if mime == "application/octet-stream" {
-		mime = ""
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes+1)
-	m, err := s.atts.Save(room, name, mime, r.Body)
-	if errors.Is(err, attach.ErrTooLarge) {
-		writeErr(w, http.StatusRequestEntityTooLarge, "file too large")
-		return
-	}
-	if errors.Is(err, attach.ErrInvalid) {
-		writeErr(w, http.StatusBadRequest, "invalid room")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "upload failed")
-		return
-	}
-	writeJSON(w, http.StatusCreated, m)
-}
-
-func (s *Server) download(w http.ResponseWriter, r *http.Request) {
-	m, err := s.atts.Get(chi.URLParam(r, "room"), chi.URLParam(r, "att"))
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "attachment not found")
-		return
-	}
-	w.Header().Set("Content-Type", m.Mime)
-	// attachment disposition prevents uploaded html/svg from executing
-	// on the app origin. img previews still work since disposition is
-	// ignored for subresource loads.
-	w.Header().Set("Content-Disposition",
-		`attachment; filename="`+strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(m.Name)+`"`)
-	w.Header().Set("Content-Security-Policy", "sandbox")
-	// #nosec G703 -- room and id were validated in Get before meta loads
-	http.ServeFile(w, r, s.atts.BlobPath(m))
 }
 
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {

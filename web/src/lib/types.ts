@@ -3,35 +3,41 @@ export interface Peer {
   name: string
 }
 
-export interface AttachmentMeta {
+export interface FileMeta {
   id: string
   name: string
   size: number
   mime: string
 }
 
+// FileRef is a FileMeta plus local transfer state. The blob lives in
+// memory only and is never uploaded.
+export interface FileRef extends FileMeta {
+  /** local blob once the file is available */
+  blob?: Blob | undefined
+  /** object url for blob, revoked on cleanup */
+  url?: string | undefined
+  /** 0..1 while transferring */
+  progress?: number | undefined
+  failed?: string | undefined
+}
+
 export interface ChatMessage {
   id: string
   peer: Peer
   body?: string
-  attachment?: AttachmentMeta
-  nonce?: string
+  file?: FileRef
   ts: number
-  /** local only: awaiting server echo */
+  /** local only: sending in progress */
   pending?: boolean
 }
-
-export type ServerEvent =
-  | { type: 'welcome'; self: Peer; peers: Peer[] }
-  | { type: 'peer_joined'; peer: Peer }
-  | { type: 'peer_left'; peer: Peer }
-  | { type: 'chat'; message: ChatMessage }
-  | { type: 'typing'; peer: Peer; typing: boolean }
 
 export interface RoomInfo {
   id: string
   peers: number
   livekit: boolean
+  iceServers: string[]
+  maxFileSize: number
 }
 
 export interface LiveKitGrant {

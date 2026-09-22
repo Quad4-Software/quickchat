@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generateKey, keyFromHash } from './e2ee'
-import { newNonce } from './chat'
+import { newNonce } from './signal'
 
 // generateKey emits url-safe base64 for the fragment, keyFromHash returns
 // standard base64 for livekit setKey. Compare decoded bytes.

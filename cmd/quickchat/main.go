@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"quad4/quickchat/internal/attach"
 	"quad4/quickchat/internal/config"
 	"quad4/quickchat/internal/hub"
 	"quad4/quickchat/internal/rooms"
@@ -45,20 +44,8 @@ func main() {
 		}
 	}()
 
-	atts, err := attach.New(filepath.Join(cfg.DataDir, "attachments"),
-		cfg.AttachmentTTL, cfg.MaxUploadBytes)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	rm := rooms.NewManager(st, cfg.RoomTTL)
-	h := hub.New(func(room, id string) *hub.Attachment {
-		m, err := atts.Get(room, id)
-		if err != nil {
-			return nil
-		}
-		return &hub.Attachment{ID: m.ID, Name: m.Name, Size: m.Size, Mime: m.Mime}
-	})
+	h := hub.New()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -72,7 +59,6 @@ func main() {
 				return
 			case <-tick.C:
 				rm.Sweep(ctx)
-				atts.Sweep()
 			}
 		}
 	}()
@@ -89,7 +75,7 @@ func main() {
 		}()
 	}
 
-	srv := server.New(cfg, rm, h, atts, st.Ping)
+	srv := server.New(cfg, rm, h, st.Ping)
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),

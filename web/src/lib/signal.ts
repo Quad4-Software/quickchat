@@ -1,20 +1,33 @@
-import type { ServerEvent } from './types'
+import type { Peer } from './types'
 
 const MAX_BACKOFF_MS = 8000
 const MAX_QUEUE = 64
 
-export class ChatSocket {
+export type SignalEvent =
+  | { type: 'welcome'; self: Peer; peers: Peer[] }
+  | { type: 'peer_joined'; peer: Peer }
+  | { type: 'peer_left'; peer: Peer }
+  | { type: 'signal'; from: Peer; data: SignalData }
+
+export interface SignalData {
+  desc?: RTCSessionDescriptionInit
+  candidate?: RTCIceCandidateInit | null
+}
+
+// SignalingSocket carries presence and WebRTC signaling only. Chat and
+// file payloads never transit it.
+export class SignalingSocket {
   private ws: WebSocket | null = null
   private room = ''
   private name = ''
   private attempts = 0
   private closed = false
   private timer: number | null = null
-  // chat frames sent while disconnected are queued and flushed on open so a
-  // reconnect does not silently drop user input
+  // signals sent while disconnected are queued and flushed on open so a
+  // reconnect does not silently drop negotiation
   private queue: string[] = []
 
-  onEvent: (e: ServerEvent) => void = () => {}
+  onEvent: (e: SignalEvent) => void = () => {}
   onStateChange: (connected: boolean) => void = () => {}
 
   connect(room: string, name: string) {
@@ -30,11 +43,13 @@ export class ChatSocket {
     const ws = new WebSocket(url)
     this.ws = ws
     ws.onmessage = (ev) => {
+      let e: SignalEvent
       try {
-        this.onEvent(JSON.parse(ev.data as string) as ServerEvent)
+        e = JSON.parse(ev.data as string) as SignalEvent
       } catch {
-        // ignore malformed frames
+        return // ignore malformed frames
       }
+      this.onEvent(e)
     }
     ws.onopen = () => {
       this.attempts = 0
@@ -57,23 +72,12 @@ export class ChatSocket {
     this.timer = window.setTimeout(() => this.dial(), delay)
   }
 
-  send(body: string, attachment?: string, nonce?: string) {
-    const data = JSON.stringify({
-      type: 'chat',
-      body,
-      attachment: attachment ?? '',
-      nonce: nonce ?? '',
-    })
+  signal(to: string, data: SignalData) {
+    const frame = JSON.stringify({ type: 'signal', to, data })
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(data)
+      this.ws.send(frame)
     } else if (this.queue.length < MAX_QUEUE) {
-      this.queue.push(data)
-    }
-  }
-
-  setTyping(typing: boolean) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'typing', typing }))
+      this.queue.push(frame)
     }
   }
 

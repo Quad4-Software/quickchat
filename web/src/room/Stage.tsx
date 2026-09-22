@@ -12,7 +12,7 @@ import type { TrackReferenceOrPlaceholder } from '@livekit/components-react'
 import { ExternalE2EEKeyProvider, Track } from 'livekit-client'
 import type { RoomOptions } from 'livekit-client'
 import { useEffect, useMemo } from 'react'
-import { Lock, Mic, MonitorUp, PhoneOff, Video } from 'lucide-react'
+import { Lock, Mic, MicOff, MonitorUp, PhoneOff, Video } from 'lucide-react'
 import { cn } from '../lib/cn'
 import type { LiveKitGrant } from '../lib/types'
 
@@ -124,32 +124,12 @@ function Tile({ track }: { track: TrackRef }) {
         <span className="max-w-32 truncate text-xs font-medium text-foreground">
           {track.participant.name || track.participant.identity}
         </span>
-        {!track.participant.isMicrophoneEnabled && <MicOffIcon />}
+        {!track.participant.isMicrophoneEnabled && (
+          <MicOff className="size-3 text-destructive" aria-label="muted" />
+        )}
         {isScreen && <MonitorUp className="size-3 text-muted-foreground" />}
       </div>
     </div>
-  )
-}
-
-function MicOffIcon() {
-  return (
-    <svg
-      className="size-3 text-destructive"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-label="muted"
-    >
-      <line x1="2" x2="22" y1="2" y2="22" />
-      <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2" />
-      <path d="M5 10v2a7 7 0 0 0 12 5" />
-      <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33" />
-      <path d="M9 9v3a3 3 0 0 0 5.12 2.12" />
-      <line x1="12" x2="12" y1="19" y2="22" />
-    </svg>
   )
 }
 

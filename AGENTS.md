@@ -1,17 +1,22 @@
 # AGENTS.md
 
 quickchat is an ephemeral chat app: disposable rooms with LiveKit voice
-and video, realtime chat and attachments over WebSocket. One Go binary
-serves everything. License: 0BSD. Copyright Quad4 Software.
+and video, plus chat and file transfer that go peer to peer over WebRTC
+data channels. The server handles room metadata, presence and signaling
+only. One Go binary serves everything. License: 0BSD. Copyright Quad4
+Software.
 
 ## Stack
 
-- Go 1.27 backend: chi router, coder/websocket, livekit server-sdk-go
-  for token minting, modernc.org/sqlite for room metadata
+- Go 1.27 backend: chi router, coder/websocket for presence+signaling,
+  livekit server-sdk-go for token minting, modernc.org/sqlite for room
+  metadata, openapi.yaml embedded and served at /api/openapi.yaml
 - React 19 + Vite 8 + TypeScript 6 (strict, exactOptionalPropertyTypes)
 - Tailwind CSS 4 via @tailwindcss/vite, void theme tokens in web/src/app.css
 - @livekit/components-react primitives (no components-styles, tiles are
   hand-styled), wouter for routing, lucide-react icons
+- @scalar/api-reference-react for /docs, vite-plugin-pwa + workbox for
+  the service worker and manifest
 - pnpm 12, pinned by packageManager. Install is hardened in
   web/pnpm-workspace.yaml: minimumReleaseAge 7 days, strictDepBuilds,
   blockExoticSubdeps
@@ -45,26 +50,42 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
     internal/config/     env-only configuration
     internal/store/      sqlite room metadata
     internal/rooms/      room id generation and TTL sweep
-    internal/hub/        websocket chat hub, JSON envelope protocol
-    internal/attach/     TTL'd attachment blobs + json meta on disk
+    internal/hub/        websocket presence + webrtc signaling relay
     internal/lktoken/    livekit access token minting
-    internal/server/     chi routes, embedded SPA with fallback
+    internal/server/     chi routes, embedded SPA, openapi.yaml
     web/                 React app, embed.go exports web.Dist (embeds dist/)
-    web/src/pages/       HomePage, RoomPage
-    web/src/room/        Stage (livekit av), ChatPane (ws chat), MessageRow
+    web/src/pages/       HomePage, RoomPage, DocsPage (scalar, lazy)
+    web/src/room/        Stage (livekit av), ChatPane, MessageRow
+    web/src/lib/signal.ts   ws client: presence + signal relay only
+    web/src/lib/mesh.ts     webrtc datachannel mesh: chat, typing, files
+    web/src/lib/pwa.ts      service worker registration + update flow
     web/src/lib/e2ee.ts  url-fragment media keys for livekit e2ee
     web/e2e/             playwright + axe specs against the real binary
 
+## Wire protocol
+
+- ws frames (server): welcome {self, peers}, peer_joined, peer_left,
+  signal {from, data}
+- ws frames (client): signal {to, data} where data is sdp or ice
+- 'chat' datachannel (json): {t:chat, id, body?, file?, ts},
+  {t:typing, on}
+- 'file-<id>' datachannel: first frame json header {id,msgId,name,size,
+  mime}, then binary chunks, sender closes for eof
+- Glare is resolved by perfect negotiation: the peer with the
+  lexicographically larger id is polite
+
 ## Rules
 
-- Ephemeral by default. Chat messages are in-memory only, never stored.
-  Attachments expire with QUICKCHAT_ATTACHMENT_TTL (default 24h).
-  Room rows expire with QUICKCHAT_ROOM_TTL (default 7d).
+- Ephemeral by default. Chat and files are peer to peer and in-memory
+  only, never persisted or relayed by the server. Room rows expire with
+  QUICKCHAT_ROOM_TTL (default 7d). The websocket carries presence and
+  signaling only, never message content.
 - Style with the void theme tokens (bg-background, text-foreground,
   bg-card, border-border, text-muted-foreground). Never raw colors in
   components. Space Grotesk for UI, Space Mono for ids and timestamps.
-- The Quad4 mark lives in web/src/components/Mark.tsx and
-  web/public/quad4-mark.svg. Use it, do not inline copies.
+- The Quad4 mark ships as web/public/quad4-mark.svg and renders through
+  a css mask in web/src/components/Mark.tsx. Do not inline svg markup.
+  UI icons come from lucide-react.
 - New dependencies must be at least 7 days old (enforced by
   minimumReleaseAge). Pin exact versions.
 - Plain ASCII prose: no em dashes, no emojis, no semicolons in prose,
@@ -78,5 +99,8 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
   go:embed), then vite build, then scripts/inline-css.mjs which inlines
   the css bundle into index.html to kill the render-blocking request.
 - The vite test config excludes web/e2e so vitest never picks up
-  playwright specs. e2e raises QUICKCHAT_RATE_* limits via env so the
-  per-ip buckets do not throttle the suite.
+  playwright specs. e2e raises QUICKCHAT_RATE_* limits and lowers
+  QUICKCHAT_MAX_FILE via env so the suite exercises limits without
+  throttling.
+- The scalar docs chunk is split out as docs-*.js and excluded from the
+  service worker precache since it needs the live spec anyway.

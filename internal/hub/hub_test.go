@@ -21,7 +21,7 @@ type testServer struct {
 
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
-	h := New(nil)
+	h := New()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.ServeWS(w, r, strings.TrimPrefix(r.URL.Path, "/"), r.URL.Query().Get("name"))
 	}))
@@ -65,6 +65,15 @@ func send(t *testing.T, c *websocket.Conn, v any) {
 	}
 }
 
+func peerIDOf(t *testing.T, e map[string]any) string {
+	t.Helper()
+	self, ok := e["self"].(map[string]any)
+	if !ok {
+		t.Fatalf("no self in event: %v", e)
+	}
+	return self["id"].(string)
+}
+
 func TestWelcomeAndRoster(t *testing.T) {
 	ts := newTestServer(t)
 	alice := ts.dial(t, "room", "alice")
@@ -91,25 +100,38 @@ func TestWelcomeAndRoster(t *testing.T) {
 	}
 }
 
-func TestChatBroadcast(t *testing.T) {
+func TestSignalRelay(t *testing.T) {
 	ts := newTestServer(t)
 	alice := ts.dial(t, "room", "alice")
-	readEvent(t, alice)
+	aliceID := peerIDOf(t, readEvent(t, alice))
 	bob := ts.dial(t, "room", "bob")
-	readEvent(t, bob)
+	bobWelcome := readEvent(t, bob)
 	readEvent(t, alice) // peer_joined
 
-	send(t, bob, map[string]any{"type": "chat", "body": "hello"})
+	bobID := peerIDOf(t, bobWelcome)
 
-	for _, c := range []*websocket.Conn{alice, bob} {
-		e := readEvent(t, c)
-		if e["type"] != "chat" {
-			t.Fatalf("expected chat, got %v", e)
-		}
-		msg := e["message"].(map[string]any)
-		if msg["body"] != "hello" || msg["peer"].(map[string]any)["name"] != "bob" {
-			t.Fatalf("bad message: %v", msg)
-		}
+	// alice -> bob only
+	payload := map[string]any{"sdp": "fake-offer"}
+	send(t, alice, map[string]any{"type": "signal", "to": bobID, "data": payload})
+
+	e := readEvent(t, bob)
+	if e["type"] != "signal" {
+		t.Fatalf("expected signal, got %v", e)
+	}
+	from := e["from"].(map[string]any)
+	if from["id"] != aliceID || from["name"] != "alice" {
+		t.Fatalf("signal should carry sender peer, got %v", from)
+	}
+	if e["data"].(map[string]any)["sdp"] != "fake-offer" {
+		t.Fatalf("signal payload mangled: %v", e["data"])
+	}
+
+	// unknown recipient is dropped silently, sender stays connected
+	send(t, alice, map[string]any{"type": "signal", "to": "zzzzzzzzzz", "data": payload})
+	send(t, alice, map[string]any{"type": "signal", "to": bobID, "data": map[string]any{"candidate": "x"}})
+	e = readEvent(t, bob)
+	if e["data"].(map[string]any)["candidate"] != "x" {
+		t.Fatal("second signal should still arrive")
 	}
 }
 
@@ -129,81 +151,38 @@ func TestPeerLeft(t *testing.T) {
 	}
 }
 
-func TestAttachmentResolution(t *testing.T) {
-	att := &Attachment{ID: "a1", Name: "f.txt", Size: 3, Mime: "text/plain"}
-	h := New(func(room, id string) *Attachment {
-		if id == "a1" {
-			return att
-		}
-		return nil
-	})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeWS(w, r, "room", "alice")
-	}))
-	defer srv.Close()
-
-	c, _, err := websocket.Dial(context.Background(),
-		"ws"+strings.TrimPrefix(srv.URL, "http")+"/?name=alice", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close(websocket.StatusNormalClosure, "")
-	readEvent(t, c)
-
-	send(t, c, map[string]any{"type": "chat", "attachment": "a1"})
-	e := readEvent(t, c)
-	msg := e["message"].(map[string]any)
-	if msg["attachment"].(map[string]any)["name"] != "f.txt" {
-		t.Fatalf("attachment not embedded: %v", msg)
-	}
-
-	// unknown attachment id must be dropped
-	send(t, c, map[string]any{"type": "chat", "attachment": "nope"})
-	send(t, c, map[string]any{"type": "chat", "body": "still alive"})
-	e = readEvent(t, c)
-	if e["type"] != "chat" || e["message"].(map[string]any)["body"] != "still alive" {
-		t.Fatal("chat should continue after dropped attachment message")
-	}
-}
-
-func TestNoncePassthrough(t *testing.T) {
-	ts := newTestServer(t)
-	c := ts.dial(t, "room", "alice")
-	readEvent(t, c)
-	send(t, c, map[string]any{"type": "chat", "body": "hi", "nonce": "n42"})
-	e := readEvent(t, c)
-	if e["message"].(map[string]any)["nonce"] != "n42" {
-		t.Fatalf("nonce not echoed: %v", e["message"])
-	}
-}
-
 func TestMalformedFramesIgnored(t *testing.T) {
 	ts := newTestServer(t)
-	c := ts.dial(t, "room", "alice")
-	readEvent(t, c)
+	alice := ts.dial(t, "room", "alice")
+	readEvent(t, alice)
+	bob := ts.dial(t, "room", "bob")
+	bobID := peerIDOf(t, readEvent(t, bob))
+	readEvent(t, alice) // peer_joined
 
-	// garbage bytes, wrong types, empty messages: none should kill the conn
+	// garbage bytes, wrong types, empty fields: none should kill the conn
 	for _, junk := range []any{
 		"not json at all",
-		map[string]any{"type": "chat", "body": 12345},
+		map[string]any{"type": "signal", "to": 12345},
 		map[string]any{"type": "bogus"},
-		map[string]any{"type": "chat"},
-		map[string]any{"type": "chat", "body": "   "},
+		map[string]any{"type": "signal"},
+		map[string]any{"type": "signal", "to": bobID},
+		map[string]any{"type": "signal", "to": bobID, "data": nil},
 	} {
 		if s, ok := junk.(string); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err := c.Write(ctx, websocket.MessageText, []byte(s))
+			err := alice.Write(ctx, websocket.MessageText, []byte(s))
 			cancel()
 			if err != nil {
 				t.Fatal(err)
 			}
 		} else {
-			send(t, c, junk)
+			send(t, alice, junk)
 		}
 	}
-	send(t, c, map[string]any{"type": "chat", "body": "still here"})
-	e := readEvent(t, c)
-	if e["message"].(map[string]any)["body"] != "still here" {
+	send(t, alice, map[string]any{"type": "signal", "to": bobID,
+		"data": map[string]any{"still": "alive"}})
+	e := readEvent(t, bob)
+	if e["data"].(map[string]any)["still"] != "alive" {
 		t.Fatal("connection should survive malformed frames")
 	}
 }
@@ -216,7 +195,7 @@ func TestOversizeFrameDisconnects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"type":"chat","body":"`+strings.Repeat("x", 40<<10)+`"}`))
+		[]byte(`{"type":"signal","to":"x","data":{"pad":"`+strings.Repeat("x", 40<<10)+`"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,8 +231,6 @@ func TestNoGoroutineLeak(t *testing.T) {
 	ts := newTestServer(t)
 	c := ts.dial(t, "room", "alice")
 	readEvent(t, c)
-	send(t, c, map[string]any{"type": "chat", "body": "x"})
-	readEvent(t, c)
 	c.Close(websocket.StatusNormalClosure, "")
 	// let the server observe the close and unwind
 	for range 50 {
@@ -272,8 +249,8 @@ func TestNoGoroutineLeak(t *testing.T) {
 }
 
 func FuzzInbound(f *testing.F) {
-	f.Add([]byte(`{"type":"chat","body":"hi"}`))
-	f.Add([]byte(`{"type":"typing","typing":true}`))
+	f.Add([]byte(`{"type":"signal","to":"abc","data":{"sdp":"x"}}`))
+	f.Add([]byte(`{"type":"signal"}`))
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`[1,2,3]`))
 	f.Add([]byte(``))

@@ -188,7 +188,14 @@ export default function RoomPage({ id }: { id: string }) {
           aria-label="chat"
           className="flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-80 md:flex-none md:border-l md:border-t-0"
         >
-          <ChatPane room={id} name={name.trim() || 'anon'} />
+          {info && (
+            <ChatPane
+              room={id}
+              name={name.trim() || 'anon'}
+              iceServers={info.iceServers ?? []}
+              maxFileSize={info.maxFileSize}
+            />
+          )}
         </aside>
       </div>
     </div>

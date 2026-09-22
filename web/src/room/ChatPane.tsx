@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, Paperclip, SendHorizonal, Users } from 'lucide-react'
-import { ChatSocket, newNonce } from '../lib/chat'
-import { uploadAttachment } from '../lib/api'
+import { Mesh, newNonce } from '../lib/mesh'
+import { activityBegin, activityEnd } from '../lib/activity'
 import { SITE } from '../lib/site'
+import { fileSize } from '../lib/format'
 import { cn } from '../lib/cn'
 import MessageRow from './MessageRow'
-import type { ChatMessage, Peer } from '../lib/types'
+import type { ChatMessage, FileMeta, FileRef, Peer } from '../lib/types'
 
 const MAX_MESSAGES = 500
+// blobs live in memory only; bound total retention so a busy room can
+// not grow the tab without limit
+const MAX_BLOB_BYTES = 256 << 20
 const TYPING_MS = 4000
 const TYPING_THROTTLE_MS = 1500
 const PIN_THRESHOLD_PX = 40
@@ -18,18 +22,27 @@ function bumpTitle() {
   document.title = `(${n}) ${SITE.name}`
 }
 
-export default function ChatPane({ room, name }: { room: string; name: string }) {
+export default function ChatPane({
+  room,
+  name,
+  iceServers,
+  maxFileSize,
+}: {
+  room: string
+  name: string
+  iceServers: string[]
+  maxFileSize: number
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
   const [typing, setTyping] = useState<Peer[]>([])
   const [connected, setConnected] = useState(false)
-  const [uploading, setUploading] = useState(0)
   const [unread, setUnread] = useState(0)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
   const [body, setBody] = useState('')
 
-  const socketRef = useRef<ChatSocket | null>(null)
+  const meshRef = useRef<Mesh | null>(null)
   const selfRef = useRef<Peer>({ id: 'me', name })
   const listRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -38,72 +51,198 @@ export default function ChatPane({ room, name }: { room: string; name: string })
   const typingTimers = useRef(new Map<string, number>())
   const typingSentAt = useRef(0)
   const dragDepth = useRef(0)
+  const blobBytes = useRef(0)
+  // per-peer upload progress: msgId -> peerId -> ratio sent
+  const upProgress = useRef(new Map<string, Map<string, number>>())
+  // msgIds with an in-flight download, for the pwa update guard
+  const activeDown = useRef(new Set<string>())
+
+  function downDone(msgId: string) {
+    if (activeDown.current.delete(msgId)) activityEnd()
+  }
+  // files can finish before their chat message arrives when channels
+  // race: fileId -> completed blob with its url, or a failure reason
+  const doneFiles = useRef(new Map<string, { blob: Blob; url: string } | string>())
+
+  function updateUpProgress(msgId: string) {
+    const per = upProgress.current.get(msgId)
+    if (!per || per.size === 0) {
+      upProgress.current.delete(msgId)
+      mutateFile(msgId, (f) => ({ ...f, progress: undefined }))
+      return
+    }
+    const min = Math.min(...per.values())
+    if (min >= 1) {
+      upProgress.current.delete(msgId)
+      mutateFile(msgId, (f) => ({ ...f, progress: undefined }))
+    } else {
+      mutateFile(msgId, (f) => ({ ...f, progress: min }))
+    }
+  }
+
+  // incomingFile builds FileRef for a received file announcement, picking
+  // up a blob or failure if the transfer already finished out of order
+  function incomingFile(meta: FileMeta): FileRef {
+    const done = doneFiles.current.get(meta.id)
+    if (typeof done === 'object') {
+      return { ...meta, blob: done.blob, url: done.url }
+    }
+    if (typeof done === 'string') {
+      return { ...meta, failed: done }
+    }
+    return { ...meta, progress: 0 }
+  }
+
+  function revokeFile(f?: FileRef) {
+    if (f?.url) {
+      URL.revokeObjectURL(f.url)
+      blobBytes.current -= f.size
+    }
+  }
+
+  function appendMessage(msg: ChatMessage) {
+    setMessages((prev) => {
+      const next = [...prev.slice(-MAX_MESSAGES + 1), msg]
+      const kept = new Set(next.map((m) => m.id))
+      for (const m of prev) if (!kept.has(m.id)) revokeFile(m.file)
+      return next
+    })
+  }
+
+  function mutateFile(msgId: string, fn: (f: FileRef) => FileRef) {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId && m.file ? { ...m, file: fn(m.file) } : m)),
+    )
+  }
 
   useEffect(() => {
-    const s = new ChatSocket()
-    s.onEvent = (e) => {
-      switch (e.type) {
-        case 'welcome':
-          selfRef.current = e.self
-          setConnected(true)
-          setPeers(e.peers)
-          break
-        case 'peer_joined':
-          setPeers((p) => (p.some((x) => x.id === e.peer.id) ? p : [...p, e.peer]))
-          break
-        case 'peer_left':
-          setPeers((p) => p.filter((x) => x.id !== e.peer.id))
-          setTyping((t) => t.filter((x) => x.id !== e.peer.id))
-          break
-        case 'chat': {
-          const msg = e.message
-          setMessages((m) => {
-            // replace the optimistic copy when our own echo arrives
-            if (msg.nonce) {
-              const i = m.findIndex((x) => x.pending && x.nonce === msg.nonce)
-              if (i >= 0) {
-                const next = m.slice()
-                next[i] = msg
-                return next
-              }
-            }
-            if (m.some((x) => x.id === msg.id)) return m
-            return [...m.slice(-MAX_MESSAGES + 1), msg]
-          })
-          if (msg.peer.id !== selfRef.current.id) {
-            if (!pinnedRef.current) setUnread((n) => n + 1)
-            if (document.hidden) bumpTitle()
+    const mesh = new Mesh({
+      room,
+      name,
+      iceServers,
+      maxFileBytes: maxFileSize,
+      handlers: {
+        onWelcome(self, roster) {
+          selfRef.current = self
+          setPeers(roster)
+        },
+        onPeerJoined(peer) {
+          setPeers((p) => (p.some((x) => x.id === peer.id) ? p : [...p, peer]))
+        },
+        onPeerLeft(peer) {
+          setPeers((p) => p.filter((x) => x.id !== peer.id))
+          setTyping((t) => t.filter((x) => x.id !== peer.id))
+          // drop the departed peer from upload denominators
+          const affected = [...upProgress.current.keys()].filter((k) =>
+            upProgress.current.get(k)?.has(peer.id),
+          )
+          for (const msgId of affected) {
+            upProgress.current.get(msgId)?.delete(peer.id)
+            updateUpProgress(msgId)
           }
-          break
-        }
-        case 'typing': {
+          // announced files from the departed peer that never arrived
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.peer.id === peer.id && m.file && !m.file.url && !m.file.failed) {
+                downDone(m.id)
+                return {
+                  ...m,
+                  file: { ...m.file, progress: undefined, failed: 'peer left' },
+                }
+              }
+              return m
+            }),
+          )
+        },
+        onChat(ev) {
+          const msg: ChatMessage = {
+            id: ev.id,
+            peer: ev.peer,
+            ts: ev.ts,
+            ...(ev.body ? { body: ev.body } : {}),
+            ...(ev.file ? { file: incomingFile(ev.file) } : {}),
+          }
+          setMessages((prev) => {
+            if (prev.some((x) => x.id === msg.id)) return prev
+            const next = [...prev.slice(-MAX_MESSAGES + 1), msg]
+            const kept = new Set(next.map((m) => m.id))
+            for (const m of prev) if (!kept.has(m.id)) revokeFile(m.file)
+            return next
+          })
+          if (!pinnedRef.current) setUnread((n) => n + 1)
+          if (document.hidden) bumpTitle()
+        },
+        onTyping(peer, on) {
           const timers = typingTimers.current
-          window.clearTimeout(timers.get(e.peer.id))
-          if (e.typing) {
+          window.clearTimeout(timers.get(peer.id))
+          if (on) {
             timers.set(
-              e.peer.id,
+              peer.id,
               window.setTimeout(
-                () => setTyping((t) => t.filter((x) => x.id !== e.peer.id)),
+                () => setTyping((t) => t.filter((x) => x.id !== peer.id)),
                 TYPING_MS,
               ),
             )
-            setTyping((t) => (t.some((x) => x.id === e.peer.id) ? t : [...t, e.peer]))
+            setTyping((t) => (t.some((x) => x.id === peer.id) ? t : [...t, peer]))
           } else {
-            setTyping((t) => t.filter((x) => x.id !== e.peer.id))
+            setTyping((t) => t.filter((x) => x.id !== peer.id))
           }
-          break
-        }
-      }
-    }
-    s.onStateChange = setConnected
-    s.connect(room, name)
-    socketRef.current = s
+        },
+        onFileProgress(p) {
+          if (p.dir === 'down') {
+            if (!activeDown.current.has(p.msgId)) {
+              activeDown.current.add(p.msgId)
+              activityBegin()
+            }
+            mutateFile(p.msgId, (f) => ({ ...f, progress: p.done / p.total }))
+            return
+          }
+          // upload side: show the slowest peer so progress means everyone
+          // has at least this much
+          let per = upProgress.current.get(p.msgId)
+          if (!per) {
+            per = new Map()
+            upProgress.current.set(p.msgId, per)
+          }
+          per.set(p.peer.id, p.done / p.total)
+          updateUpProgress(p.msgId)
+        },
+        onFileDone(fileId, msgId, _peer, blob) {
+          downDone(msgId)
+          const url = URL.createObjectURL(blob)
+          blobBytes.current += blob.size
+          // remember it in case the chat message lands after the file
+          doneFiles.current.set(fileId, { blob, url })
+          mutateFile(msgId, (f) => ({ ...f, blob, url, progress: undefined }))
+        },
+        onFileError(fileId, msgId, _peer, reason) {
+          downDone(msgId)
+          doneFiles.current.set(fileId, reason)
+          mutateFile(msgId, (f) => ({ ...f, progress: undefined, failed: reason }))
+        },
+        onConnected: setConnected,
+      },
+    })
+    mesh.connect()
+    meshRef.current = mesh
     const timers = typingTimers.current
     return () => {
-      s.close()
+      mesh.close()
       timers.forEach((t) => window.clearTimeout(t))
     }
+    // iceServers and maxFileSize are stable room config
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room, name])
+
+  // object urls must outlive renders but not the session
+  useEffect(() => {
+    return () => {
+      setMessages((prev) => {
+        for (const m of prev) revokeFile(m.file)
+        return prev
+      })
+    }
+  }, [])
 
   // unread count in the tab title while the page is hidden
   useEffect(() => {
@@ -154,27 +293,15 @@ export default function ChatPane({ room, name }: { room: string; name: string })
     setUnread(0)
   }
 
-  function pushMessage(body_: string, attachment?: ChatMessage['attachment']) {
-    const nonce = newNonce()
-    const msg: ChatMessage = {
-      id: `local-${nonce}`,
-      peer: selfRef.current,
-      body: body_,
-      nonce,
-      ts: Date.now(),
-      pending: true,
-      ...(attachment ? { attachment } : {}),
-    }
-    setMessages((m) => [...m.slice(-MAX_MESSAGES + 1), msg])
-    pinnedRef.current = true
-    socketRef.current?.send(body_, attachment?.id, nonce)
-  }
-
   function send() {
     const text = body.trim()
     if (!text) return
-    pushMessage(text)
-    socketRef.current?.setTyping(false)
+    const mesh = meshRef.current
+    if (!mesh) return
+    const id = mesh.broadcastChat(text)
+    appendMessage({ id, peer: selfRef.current, body: text, ts: Date.now() })
+    pinnedRef.current = true
+    mesh.broadcastTyping(false)
     setBody('')
     resetComposerHeight()
   }
@@ -184,32 +311,66 @@ export default function ChatPane({ room, name }: { room: string; name: string })
     const now = Date.now()
     if (v && now - typingSentAt.current > TYPING_THROTTLE_MS) {
       typingSentAt.current = now
-      socketRef.current?.setTyping(true)
+      meshRef.current?.broadcastTyping(true)
     }
   }
 
-  async function uploadFiles(files: Iterable<File>) {
+  function sendFiles(files: Iterable<File>) {
+    const mesh = meshRef.current
+    if (!mesh) return
     for (const f of files) {
-      setUploading((n) => n + 1)
       setError('')
-      try {
-        const meta = await uploadAttachment(room, f)
-        pushMessage(body.trim(), meta)
-        setBody('')
-        resetComposerHeight()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : `upload failed: ${f.name}`)
-      } finally {
-        setUploading((n) => n - 1)
+      if (f.size > maxFileSize) {
+        setError(`${f.name} exceeds the ${fileSize(maxFileSize)} limit`)
+        continue
       }
+      const meta = {
+        id: newNonce(),
+        name: f.name || 'file',
+        size: f.size,
+        mime: f.type || 'application/octet-stream',
+      }
+      const msgId = mesh.broadcastChat(body.trim(), meta)
+      const url = URL.createObjectURL(f)
+      blobBytes.current += f.size
+      appendMessage({
+        id: msgId,
+        peer: selfRef.current,
+        ts: Date.now(),
+        ...(body.trim() ? { body: body.trim() } : {}),
+        file: { ...meta, blob: f, url },
+      })
+      pinnedRef.current = true
+      mesh.sendFile(f, meta, msgId)
     }
+    setBody('')
+    resetComposerHeight()
     if (fileRef.current) fileRef.current.value = ''
+    // trim memory if retention cap exceeded
+    setMessages((prev) => {
+      let bytes = blobBytes.current
+      if (bytes <= MAX_BLOB_BYTES) return prev
+      const next = prev.slice()
+      for (let i = 0; i < next.length && bytes > MAX_BLOB_BYTES; i++) {
+        const m = next[i]
+        if (m.file?.url) {
+          const f = { ...m.file }
+          revokeFile(f)
+          delete f.blob
+          delete f.url
+          f.failed = 'evicted from memory'
+          next[i] = { ...m, file: f }
+          bytes -= m.file.size
+        }
+      }
+      return next
+    })
   }
 
   function onPaste(e: React.ClipboardEvent) {
     if (e.clipboardData.files.length > 0) {
       e.preventDefault()
-      void uploadFiles(e.clipboardData.files)
+      sendFiles(e.clipboardData.files)
     }
   }
 
@@ -217,7 +378,7 @@ export default function ChatPane({ room, name }: { room: string; name: string })
     e.preventDefault()
     dragDepth.current = 0
     setDragging(false)
-    if (e.dataTransfer.files.length > 0) void uploadFiles(e.dataTransfer.files)
+    if (e.dataTransfer.files.length > 0) sendFiles(e.dataTransfer.files)
   }
 
   function resetComposerHeight() {
@@ -251,7 +412,7 @@ export default function ChatPane({ room, name }: { room: string; name: string })
     >
       {dragging && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-border-strong bg-background/80">
-          <p className="text-sm font-medium text-foreground">drop to attach</p>
+          <p className="text-sm font-medium text-foreground">drop to send</p>
         </div>
       )}
 
@@ -298,11 +459,11 @@ export default function ChatPane({ room, name }: { room: string; name: string })
         >
           {messages.length === 0 && (
             <p className="pt-8 text-center text-xs text-dim">
-              messages disappear when you leave
+              messages and files go peer to peer, nothing is stored
             </p>
           )}
           {messages.map((m) => (
-            <MessageRow key={m.id} room={room} msg={m} />
+            <MessageRow key={m.id} msg={m} />
           ))}
           {typing.length > 0 && (
             <p className="text-xs text-muted-foreground" aria-live="off">
@@ -334,16 +495,15 @@ export default function ChatPane({ room, name }: { room: string; name: string })
             type="file"
             multiple
             className="hidden"
-            aria-label="choose files to attach"
+            aria-label="choose files to send"
             onChange={(e) => {
-              if (e.target.files) void uploadFiles(e.target.files)
+              if (e.target.files) sendFiles(e.target.files)
             }}
           />
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={uploading > 0}
-            aria-label="attach file"
-            title="attach file (or paste / drop)"
+            aria-label="send file"
+            title="send file peer to peer (or paste / drop)"
             className="rounded-md border border-border bg-card p-2 text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-50"
           >
             <Paperclip className="size-4" aria-hidden />
@@ -364,9 +524,7 @@ export default function ChatPane({ room, name }: { room: string; name: string })
                 e.currentTarget.blur()
               }
             }}
-            placeholder={
-              uploading > 0 ? 'uploading...' : 'message  (/ to focus, enter to send)'
-            }
+            placeholder="message  (/ to focus, enter to send)"
             aria-label="message"
             rows={1}
             autoFocus
