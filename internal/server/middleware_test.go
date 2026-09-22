@@ -72,13 +72,16 @@ func TestCacheControl(t *testing.T) {
 }
 
 func TestGzip(t *testing.T) {
-	ts := newTestServer(t, testConfig())
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/", nil)
+	body := strings.Repeat("hello world ", 200)
+	stub := gzipped(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, body)
+	}))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
-	res, err := http.DefaultTransport.RoundTrip(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stub.ServeHTTP(rec, req)
+	res := rec.Result()
 	defer res.Body.Close()
 	if res.Header.Get("Content-Encoding") != "gzip" {
 		t.Fatalf("expected gzip, got %s", res.Header.Get("Content-Encoding"))
@@ -87,12 +90,12 @@ func TestGzip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := io.ReadAll(zr)
+	got, err := io.ReadAll(zr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "<html") {
-		t.Fatalf("decompressed body wrong: %.80s", body)
+	if string(got) != body {
+		t.Fatalf("decompressed body wrong: %.80s", got)
 	}
 }
 

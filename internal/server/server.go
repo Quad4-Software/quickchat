@@ -241,6 +241,13 @@ func spaHandler() http.Handler {
 	if err != nil {
 		panic(err)
 	}
+	// a checkout without a web build only contains .gitkeep; fail cleanly
+	// instead of letting the file server render a directory listing
+	if _, err := fs.Stat(dist, "index.html"); err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeErr(w, http.StatusServiceUnavailable, "frontend not built")
+		})
+	}
 	files := http.FileServerFS(dist)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
