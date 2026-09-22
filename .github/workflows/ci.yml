@@ -134,7 +134,7 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          docker run -d --name quickchat-ci -p 127.0.0.1:8080:8080 --tmpfs /data quickchat:ci
+          docker run -d --name quickchat-ci -p 127.0.0.1:8080:8080 --tmpfs /data:rw,mode=1777 quickchat:ci
           trap 'docker rm -f quickchat-ci' EXIT
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/healthz; then
