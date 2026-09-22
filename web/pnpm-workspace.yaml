@@ -1,0 +1,19 @@
+packages:
+  - .
+
+# Reject dependency versions published less than 7 days ago.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+
+# Fail install when a dependency wants to run a build script that is not allowlisted.
+strictDepBuilds: true
+allowBuilds:
+  esbuild: true
+
+# Block unexpected injected transitive dependencies.
+blockExoticSubdeps: true
+
+# Reinstall when node_modules is stale instead of running against it.
+verifyDepsBeforeRun: install
+
+savePrefix: ''

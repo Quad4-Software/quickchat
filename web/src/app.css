@@ -1,0 +1,110 @@
+@import 'tailwindcss';
+@import '@fontsource/space-grotesk/latin-400.css';
+@import '@fontsource/space-grotesk/latin-500.css';
+@import '@fontsource/space-grotesk/latin-700.css';
+@import '@fontsource/space-mono/latin-400.css';
+@import '@fontsource/space-mono/latin-700.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+
+  --color-void-50: #f4f4f5;
+  --color-void-100: #e9e9ec;
+  --color-void-200: #d9d9de;
+  --color-void-300: #a1a1aa;
+  --color-void-400: #71717a;
+  --color-void-500: #3f3f46;
+  --color-void-600: #2a2a31;
+  --color-void-700: #1f1f24;
+  --color-void-800: #16161a;
+  --color-void-850: #101013;
+  --color-void-900: #0d0d10;
+  --color-void-950: #0a0a0b;
+
+  --color-paper-50: #fafafa;
+  --color-paper-100: #f4f4f5;
+  --color-paper-200: #e9e9ec;
+  --color-paper-300: #d9d9de;
+  --color-paper-400: #a1a1aa;
+  --color-paper-500: #71717a;
+  --color-paper-900: #18181b;
+  --color-paper-950: #0a0a0b;
+}
+
+:root {
+  --background: var(--color-paper-50);
+  --recessed: var(--color-paper-100);
+  --hover: var(--color-paper-100);
+  --card: var(--color-paper-50);
+  --border: var(--color-paper-200);
+  --border-strong: var(--color-paper-300);
+  --foreground: var(--color-paper-900);
+  --emphasis: var(--color-paper-950);
+  --muted-foreground: var(--color-paper-400);
+  --dim: var(--color-paper-500);
+  --inverted: var(--color-paper-950);
+  --inverted-foreground: var(--color-paper-50);
+  --destructive: #dc2626;
+  --success: #16a34a;
+  --ring: var(--color-paper-400);
+}
+
+.dark {
+  --background: var(--color-void-950);
+  --recessed: var(--color-void-900);
+  --hover: var(--color-void-850);
+  --card: var(--color-void-800);
+  --border: var(--color-void-700);
+  --border-strong: var(--color-void-600);
+  --foreground: var(--color-void-200);
+  --emphasis: var(--color-void-100);
+  --muted-foreground: var(--color-void-400);
+  --dim: var(--color-void-500);
+  --inverted: var(--color-void-50);
+  --inverted-foreground: var(--color-void-950);
+  --destructive: #f87171;
+  --success: #4ade80;
+  --ring: var(--color-void-400);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-recessed: var(--recessed);
+  --color-hover: var(--hover);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--foreground);
+  --color-emphasis: var(--emphasis);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-dim: var(--dim);
+  --color-inverted: var(--inverted);
+  --color-inverted-foreground: var(--inverted-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-ring: var(--ring);
+}
+
+::selection {
+  background: rgb(0 115 255 / 0.25);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a, button, input, [role='button'] {
+    transition-property: color, background-color, border-color;
+    transition-duration: 150ms;
+  }
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
