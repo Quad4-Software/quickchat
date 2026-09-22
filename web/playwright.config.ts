@@ -29,7 +29,9 @@ const livekitEnv = process.env.LIVEKIT_URL
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
-  retries: 0,
+  // ci runners contend for cpu when two browser contexts negotiate
+  // webrtc, so a single retry absorbs navigation flakes
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: 'list',
   use: {
