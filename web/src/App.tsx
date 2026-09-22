@@ -4,12 +4,12 @@ import { useBrowserLocation } from 'wouter/use-browser-location'
 import { useHashLocation } from 'wouter/use-hash-location'
 import { RefreshCw } from 'lucide-react'
 import HomePage from './pages/HomePage'
+import RoomPage from './pages/RoomPage'
 import Mark from './components/Mark'
 import { initPwa } from './lib/pwa'
 
 const DocsPage = lazy(() => import('./pages/DocsPage'))
 const DemoPage = lazy(() => import('./pages/DemoPage'))
-const RoomPage = lazy(() => import('./pages/RoomPage'))
 
 // the demo bundle runs fully client side on static hosting: hash routing
 // needs no server fallback and the demo room replaces the landing page
@@ -63,15 +63,7 @@ export default function App() {
             <HomePage />
           )}
         </Route>
-        {!DEMO && (
-          <Route path="/r/:id">
-            {(params) => (
-              <Suspense fallback={lazyFallback()}>
-                <RoomPage id={params.id} />
-              </Suspense>
-            )}
-          </Route>
-        )}
+        {!DEMO && <Route path="/r/:id">{(params) => <RoomPage id={params.id} />}</Route>}
         <Route path="/demo">
           <Suspense fallback={lazyFallback()}>
             <DemoPage />

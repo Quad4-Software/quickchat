@@ -153,14 +153,9 @@ jobs:
             --type spdxjson \
             --predicate sbom.spdx.json \
             "${IMAGE}@${DIGEST}"
-      - name: Install vexctl
-        run: |
-          curl -sSfLo vexctl https://github.com/openvex/vexctl/releases/download/v0.4.4/vexctl-linux-amd64
-          echo "d315e2778af88b999ad4bba30a08aa2677ed701638e16c341b6d57b43c1e064d  vexctl" | sha256sum -c -
-          chmod +x vexctl && sudo mv vexctl /usr/local/bin/
       - name: OpenVEX attestation
         env:
-          VEX_PRODUCT: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           cat > openvex.json <<'EOF'
           {
@@ -169,4 +164,7 @@ jobs:
             "statements": []
           }
           EOF
-          vexctl attest --attach --sign openvex.json "${VEX_PRODUCT}"
+          cosign attest --yes \
+            --type https://openvex.dev/ns/v0.2.0 \
+            --predicate openvex.json \
+            "${IMAGE}@${DIGEST}"

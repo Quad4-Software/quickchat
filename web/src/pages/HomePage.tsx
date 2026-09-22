@@ -81,7 +81,7 @@ export default function HomePage() {
         <p className="pt-4 text-center">
           <Link
             href="/demo"
-            className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             try the demo
           </Link>
