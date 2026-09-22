@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: quickchat
+
+# the vite bundle must exist before go build because web/dist is embedded
+# with go:embed; without these hooks release binaries would ship an empty ui
+before:
+  hooks:
+    - pnpm -C web install --frozen-lockfile
+    - pnpm -C web build
+
+builds:
+  - main: ./cmd/quickchat
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    tags:
+      - netgo
+    ldflags:
+      - -s -w
+      - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
+      - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# the workflow creates the github release so provenance, signatures and
+# attestations can be attached in one place
+release:
+  disable: true
+
+changelog:
+  disable: true

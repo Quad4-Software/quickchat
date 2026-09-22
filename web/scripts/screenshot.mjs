@@ -76,7 +76,10 @@ build(true)
 let server = await serve()
 const base = `http://127.0.0.1:${server.address().port}`
 const seeded = (page) =>
-  page.waitForSelector('img', { timeout: 15000 }).then(() => page.waitForTimeout(400))
+  Promise.all([
+    page.waitForSelector('img', { timeout: 15000 }),
+    page.waitForSelector('video', { timeout: 15000 }),
+  ]).then(() => page.waitForTimeout(600))
 await shot(`${base}/#/`, 'room.png', DESKTOP, seeded)
 await shot(`${base}/#/`, 'room-mobile.png', MOBILE, seeded)
 server.close()

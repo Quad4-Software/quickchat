@@ -35,7 +35,10 @@ export default function HomePage() {
   }
 
   return (
-    <main id="main" className="relative flex h-full items-center justify-center px-4">
+    <main
+      id="main"
+      className="relative flex h-full items-center justify-center overflow-y-auto px-4"
+    >
       <Starfield />
       <div className="relative w-full max-w-sm">
         <div className="flex flex-col items-center gap-3 pb-8">

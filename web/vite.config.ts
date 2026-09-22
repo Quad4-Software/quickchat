@@ -1,3 +1,5 @@
+import { copyFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -22,13 +24,25 @@ const pwaStub = {
   },
 }
 
+// the demo bundle is static, so it ships a copy of the spec for /docs
+// instead of calling the live /api/openapi.yaml endpoint
+const demoSpec = {
+  name: 'demo-openapi-spec',
+  closeBundle() {
+    copyFileSync(
+      fileURLToPath(new URL('../internal/server/openapi.yaml', import.meta.url)),
+      fileURLToPath(new URL('dist/openapi.yaml', import.meta.url)),
+    )
+  },
+}
+
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
   plugins: [
     react(),
     tailwindcss(),
     ...(DEMO
-      ? [pwaStub]
+      ? [pwaStub, demoSpec]
       : [
           VitePWA({
             registerType: 'prompt',

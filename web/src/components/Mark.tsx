@@ -5,7 +5,10 @@ interface Props {
 }
 
 // The brand mark ships as an asset in public/. A css mask keeps
-// currentColor theming without inlining svg markup.
+// currentColor theming without inlining svg markup. BASE_URL keeps the
+// url correct when the app is hosted under a subpath like gh pages.
+const MARK_URL = `${import.meta.env.BASE_URL}quad4-mark.svg`
+
 export default function Mark({ size = 24, className, decorative }: Props) {
   return (
     <span
@@ -18,8 +21,8 @@ export default function Mark({ size = 24, className, decorative }: Props) {
         width: size,
         height: size,
         backgroundColor: 'currentColor',
-        WebkitMaskImage: 'url(/quad4-mark.svg)',
-        maskImage: 'url(/quad4-mark.svg)',
+        WebkitMaskImage: `url(${MARK_URL})`,
+        maskImage: `url(${MARK_URL})`,
         WebkitMaskSize: 'contain',
         maskSize: 'contain',
         WebkitMaskRepeat: 'no-repeat',

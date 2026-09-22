@@ -2,6 +2,7 @@ bin/
 data/
 .env
 web/dist/*
+/dist/
 !web/dist/.gitkeep
 web/node_modules/
 web/.lighthouseci/

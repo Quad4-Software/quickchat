@@ -11,12 +11,25 @@ import {
 import type { TrackReferenceOrPlaceholder } from '@livekit/components-react'
 import { ExternalE2EEKeyProvider, Track } from 'livekit-client'
 import type { RoomOptions } from 'livekit-client'
-import { useEffect, useMemo } from 'react'
-import { Lock, Mic, MicOff, MonitorUp, PhoneOff, Video } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  LayoutGrid,
+  Lock,
+  Maximize,
+  Mic,
+  MicOff,
+  Minimize,
+  MonitorUp,
+  PhoneOff,
+  PictureInPicture2,
+  UserRound,
+  Video,
+} from 'lucide-react'
 import { cn } from '../lib/cn'
 import type { LiveKitGrant } from '../lib/types'
 
 type TrackRef = TrackReferenceOrPlaceholder
+type View = 'grid' | 'speaker'
 
 export default function Stage({
   grant,
@@ -73,15 +86,44 @@ function StageInner() {
     { source: Track.Source.ScreenShare, withPlaceholder: false },
     { source: Track.Source.Camera, withPlaceholder: true },
   ])
+  const [view, setView] = useState<View>('grid')
+  const [fullscreen, setFullscreen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  // speaker view pins the screenshare or the first tile large
+  const featured =
+    view === 'speaker'
+      ? (tracks.find((t) => t.source === Track.Source.ScreenShare) ?? tracks[0])
+      : undefined
+  const rest = featured ? tracks.filter((t) => t !== featured) : tracks
 
   return (
-    <>
+    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {tracks.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">
               nobody here yet. share the link.
             </p>
+          </div>
+        ) : featured ? (
+          <div className="flex h-full flex-col gap-3">
+            <div className="min-h-0 flex-1">
+              <Tile track={featured} featured />
+            </div>
+            {rest.length > 0 && (
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {rest.map((t) => (
+                  <Tile key={`${t.participant.identity}-${t.source}`} track={t} strip />
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid h-fit grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -91,21 +133,55 @@ function StageInner() {
           </div>
         )}
       </div>
-      <Controls />
-    </>
+      <Controls
+        view={view}
+        onView={setView}
+        fullscreen={fullscreen}
+        onFullscreen={() => {
+          if (document.fullscreenElement) void document.exitFullscreen()
+          else void rootRef.current?.requestFullscreen()
+        }}
+      />
+    </div>
   )
 }
 
-function Tile({ track }: { track: TrackRef }) {
+function Tile({
+  track,
+  featured,
+  strip,
+}: {
+  track: TrackRef
+  featured?: boolean
+  strip?: boolean
+}) {
   const speaking = useIsSpeaking(track.participant)
   const isScreen = track.source === Track.Source.ScreenShare
   const hasVideo = isTrackReference(track)
+  const tileRef = useRef<HTMLDivElement>(null)
+  const [pip, setPip] = useState(false)
+
+  useEffect(() => {
+    const el = tileRef.current?.querySelector('video')
+    if (!el) return
+    const enter = () => setPip(true)
+    const leave = () => setPip(false)
+    el.addEventListener('enterpictureinpicture', enter)
+    el.addEventListener('leavepictureinpicture', leave)
+    return () => {
+      el.removeEventListener('enterpictureinpicture', enter)
+      el.removeEventListener('leavepictureinpicture', leave)
+    }
+  }, [hasVideo])
 
   return (
     <div
+      ref={tileRef}
       className={cn(
-        'relative aspect-video overflow-hidden rounded-lg border bg-recessed',
-        isScreen && 'sm:col-span-2',
+        'group relative aspect-video overflow-hidden rounded-lg border bg-recessed',
+        isScreen && !featured && 'sm:col-span-2',
+        featured && 'h-full w-full',
+        strip && 'aspect-video w-40 shrink-0',
         speaking ? 'border-success' : 'border-border',
       )}
     >
@@ -129,6 +205,33 @@ function Tile({ track }: { track: TrackRef }) {
         )}
         {isScreen && <MonitorUp className="size-3 text-muted-foreground" />}
       </div>
+      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        {hasVideo && document.pictureInPictureEnabled && (
+          <button
+            aria-label="picture in picture"
+            aria-pressed={pip}
+            title="picture in picture"
+            onClick={() => {
+              const el = tileRef.current?.querySelector('video')
+              if (!el) return
+              if (document.pictureInPictureElement === el)
+                void document.exitPictureInPicture()
+              else void el.requestPictureInPicture()
+            }}
+            className="rounded-md bg-background/80 p-1.5 text-muted-foreground backdrop-blur-sm hover:text-foreground"
+          >
+            <PictureInPicture2 className="size-3.5" aria-hidden />
+          </button>
+        )}
+        <button
+          aria-label="fullscreen tile"
+          title="fullscreen tile"
+          onClick={() => void tileRef.current?.requestFullscreen()}
+          className="rounded-md bg-background/80 p-1.5 text-muted-foreground backdrop-blur-sm hover:text-foreground"
+        >
+          <Maximize className="size-3.5" aria-hidden />
+        </button>
+      </div>
     </div>
   )
 }
@@ -139,7 +242,17 @@ const toggleClass = cn(
   'aria-pressed:border-border-strong aria-pressed:text-emphasis',
 )
 
-function Controls() {
+function Controls({
+  view,
+  onView,
+  fullscreen,
+  onFullscreen,
+}: {
+  view: View
+  onView: (v: View) => void
+  fullscreen: boolean
+  onFullscreen: () => void
+}) {
   return (
     <div className="flex items-center justify-center gap-2 border-t border-border px-4 py-3">
       <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
@@ -154,6 +267,32 @@ function Controls() {
         <MonitorUp className="size-4" aria-hidden />
         <span className="sr-only">share screen</span>
       </TrackToggle>
+      <button
+        onClick={() => onView(view === 'grid' ? 'speaker' : 'grid')}
+        aria-label={view === 'grid' ? 'speaker view' : 'grid view'}
+        aria-pressed={view === 'speaker'}
+        title={view === 'grid' ? 'speaker view' : 'grid view'}
+        className={toggleClass}
+      >
+        {view === 'grid' ? (
+          <UserRound className="size-4" aria-hidden />
+        ) : (
+          <LayoutGrid className="size-4" aria-hidden />
+        )}
+      </button>
+      <button
+        onClick={onFullscreen}
+        aria-label={fullscreen ? 'exit fullscreen' : 'fullscreen'}
+        aria-pressed={fullscreen}
+        title={fullscreen ? 'exit fullscreen' : 'fullscreen'}
+        className={toggleClass}
+      >
+        {fullscreen ? (
+          <Minimize className="size-4" aria-hidden />
+        ) : (
+          <Maximize className="size-4" aria-hidden />
+        )}
+      </button>
       <DisconnectButton
         className={cn(
           'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',

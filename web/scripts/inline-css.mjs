@@ -8,7 +8,7 @@ const dist = new URL('../dist', import.meta.url).pathname
 const htmlPath = join(dist, 'index.html')
 const html = readFileSync(htmlPath, 'utf8')
 
-const linkRe = /<link rel="stylesheet"[^>]*href="\/(assets\/[^"]+\.css)"[^>]*\/?>/
+const linkRe = /<link rel="stylesheet"[^>]*href="[^"]*?(assets\/[^"]+\.css)"[^>]*\/?>/
 const match = html.match(linkRe)
 if (!match) {
   console.error('inline-css: no stylesheet link found in index.html')

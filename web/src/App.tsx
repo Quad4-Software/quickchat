@@ -69,13 +69,11 @@ export default function App() {
             <DemoPage />
           </Suspense>
         </Route>
-        {!DEMO && (
-          <Route path="/docs">
-            <Suspense fallback={lazyFallback()}>
-              <DocsPage />
-            </Suspense>
-          </Route>
-        )}
+        <Route path="/docs">
+          <Suspense fallback={lazyFallback()}>
+            <DocsPage />
+          </Suspense>
+        </Route>
         <Route>
           <NotFound />
         </Route>

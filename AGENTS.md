@@ -43,6 +43,10 @@ Software.
   labels. Set Domains to https://host:8080.
 - Publishing lives in .github/workflows/docker.yml: ghcr push, zstd
   compression, cosign keyless sign, SBOM and OpenVEX attestations.
+- Releases: .goreleaser.yaml builds the six platform archives on v* tags.
+  Its before hooks run the web build so dist/ is embedded. The release
+  workflow adds SLSA3 provenance via the generic generator, cosign
+  sign-blob on checksums.txt, and actions/attest-build-provenance.
 
 ## Layout
 
@@ -54,8 +58,8 @@ Software.
     internal/lktoken/    livekit access token minting
     internal/server/     chi routes, embedded SPA, openapi.yaml
     web/                 React app, embed.go exports web.Dist (embeds dist/)
-    web/src/pages/       HomePage, RoomPage, DocsPage (scalar, lazy)
-    web/src/room/        Stage (livekit av), ChatPane, MessageRow
+    web/src/pages/       HomePage, RoomPage, DemoPage, DocsPage (scalar, lazy)
+    web/src/room/        Stage (livekit av), DemoStage, ChatPane, MessageRow
     web/src/lib/signal.ts   ws client: presence + signal relay only
     web/src/lib/mesh.ts     webrtc datachannel mesh: chat, typing, files
     web/src/lib/pwa.ts      service worker registration + update flow
@@ -104,3 +108,10 @@ Software.
   throttling.
 - The scalar docs chunk is split out as docs-*.js and excluded from the
   service worker precache since it needs the live spec anyway.
+- The demo build (VITE_DEMO=1, VITE_BASE) is the gh pages bundle: hash
+  routing, no service worker, a copy of openapi.yaml written into dist
+  for /docs, and DemoMesh + DemoStage scripted peers instead of a server.
+- Asset urls that ship in runtime js (css masks, the docs spec url) must
+  use import.meta.env.BASE_URL so they resolve under a pages subpath.
+- #root is locked to 100dvh with document overflow hidden; every region
+  scrolls internally, never the page. Keep room panels min-h-0.

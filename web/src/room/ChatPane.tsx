@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, Paperclip, SendHorizonal, Users } from 'lucide-react'
+import {
+  ArrowDown,
+  Bell,
+  BellOff,
+  BellRing,
+  Paperclip,
+  SendHorizonal,
+  Users,
+} from 'lucide-react'
 import { Mesh, newNonce } from '../lib/mesh'
 import type { ChatSession, MeshOptions } from '../lib/mesh'
 import { activityBegin, activityEnd } from '../lib/activity'
@@ -45,6 +53,9 @@ export default function ChatPane({
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
   const [body, setBody] = useState('')
+  const [notify, setNotify] = useState<NotificationPermission>(() =>
+    'Notification' in window ? Notification.permission : 'denied',
+  )
 
   const meshRef = useRef<ChatSession | null>(null)
   const selfRef = useRef<Peer>({ id: 'me', name })
@@ -174,7 +185,20 @@ export default function ChatPane({
             return next
           })
           if (!pinnedRef.current) setUnread((n) => n + 1)
-          if (document.hidden) bumpTitle()
+          if (document.hidden) {
+            bumpTitle()
+            if (
+              'Notification' in window &&
+              Notification.permission === 'granted' &&
+              ev.peer.id !== selfRef.current.id
+            ) {
+              const n = new Notification(`${ev.peer.name} - ${SITE.name}`, {
+                body: ev.body ?? ev.file?.name ?? '',
+                tag: ev.id,
+              })
+              n.onclick = () => window.focus()
+            }
+          }
         },
         onTyping(peer, on) {
           const timers = typingTimers.current
@@ -431,24 +455,45 @@ export default function ChatPane({
         >
           {peers.map((p) => p.name).join(', ')}
         </span>
+        {'Notification' in window && (
+          <button
+            onClick={() => {
+              if (Notification.permission === 'default') {
+                void Notification.requestPermission().then(setNotify)
+              } else {
+                setNotify(Notification.permission)
+              }
+            }}
+            aria-label={
+              notify === 'granted' ? 'notifications on' : 'enable browser notifications'
+            }
+            aria-pressed={notify === 'granted'}
+            title={
+              notify === 'granted'
+                ? 'notifications on'
+                : notify === 'denied'
+                  ? 'notifications blocked by the browser'
+                  : 'notify me of new messages'
+            }
+            className="rounded-md p-1 text-muted-foreground hover:bg-hover hover:text-foreground"
+          >
+            {notify === 'granted' ? (
+              <BellRing className="size-4 text-emphasis" aria-hidden />
+            ) : notify === 'denied' ? (
+              <BellOff className="size-4" aria-hidden />
+            ) : (
+              <Bell className="size-4" aria-hidden />
+            )}
+          </button>
+        )}
         <span
           role="status"
-          className="flex items-center gap-1.5"
-          title={connected ? 'connected' : 'disconnected'}
-        >
-          <span className="sr-only">{connected ? 'connected' : 'disconnected'}</span>
-          {!connected && (
-            <span className="font-mono text-[10px] text-destructive" aria-hidden>
-              reconnecting
-            </span>
+          className={cn(
+            'shrink-0 font-mono text-[10px]',
+            connected ? 'text-success' : 'text-destructive',
           )}
-          <span
-            className={cn(
-              'size-2 shrink-0 rounded-full',
-              connected ? 'bg-success' : 'bg-destructive',
-            )}
-            aria-hidden
-          />
+        >
+          {connected ? 'online' : 'reconnecting'}
         </span>
       </div>
 

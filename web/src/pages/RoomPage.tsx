@@ -7,6 +7,7 @@ import { getRoom, livekitToken } from '../lib/api'
 import { keyFromHash } from '../lib/e2ee'
 import { randomName } from '../lib/names'
 import { SITE } from '../lib/site'
+import { useMediaQuery } from '../lib/useMedia'
 import type { LiveKitGrant, RoomInfo } from '../lib/types'
 
 const Stage = lazy(() => import('../room/Stage'))
@@ -22,6 +23,28 @@ export default function RoomPage({ id }: { id: string }) {
   // stable for the lifetime of the page
   const [e2eeKey] = useState(() => keyFromHash(location.hash))
   const copyTimer = useRef<number | null>(null)
+  const asideRef = useRef<HTMLElement>(null)
+  const isMd = useMediaQuery('(min-width: 768px)')
+  const [chatW, setChatW] = useState(() => {
+    const v = Number(localStorage.getItem('qc-chat-w'))
+    return v >= 240 && v <= 720 ? v : 320
+  })
+  function resizeChat(e: React.PointerEvent) {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = asideRef.current?.getBoundingClientRect().width ?? chatW
+    let latest = startW
+    const move = (ev: PointerEvent) => {
+      latest = Math.min(720, Math.max(240, startW + (startX - ev.clientX)))
+      setChatW(latest)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      localStorage.setItem('qc-chat-w', String(latest))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up, { once: true })
+  }
 
   useEffect(() => {
     return () => {
@@ -81,7 +104,10 @@ export default function RoomPage({ id }: { id: string }) {
 
   if (!joined) {
     return (
-      <main id="main" className="flex h-full items-center justify-center px-4">
+      <main
+        id="main"
+        className="flex h-full items-center justify-center overflow-y-auto px-4"
+      >
         <form
           onSubmit={join}
           className="w-full max-w-xs rounded-lg border border-border bg-card p-4 shadow-sm"
@@ -185,9 +211,19 @@ export default function RoomPage({ id }: { id: string }) {
           )}
         </main>
         <aside
+          ref={asideRef}
           aria-label="chat"
-          className="flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-80 md:flex-none md:border-l md:border-t-0"
+          style={isMd ? { width: `${chatW}px` } : undefined}
+          className="relative flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-auto md:flex-none md:border-l md:border-t-0"
         >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="resize chat panel"
+            title="drag to resize"
+            onPointerDown={resizeChat}
+            className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover active:bg-hover md:block"
+          />
           {info && (
             <ChatPane
               room={id}
