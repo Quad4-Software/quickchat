@@ -1,6 +1,8 @@
 bin/
 data/
+.env
 web/dist/*
 !web/dist/.gitkeep
 web/node_modules/
+web/.lighthouseci/
 *.tsbuildinfo

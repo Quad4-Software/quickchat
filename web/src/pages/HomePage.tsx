@@ -4,6 +4,7 @@ import { ArrowRight, Plus } from 'lucide-react'
 import Mark from '../components/Mark'
 import Starfield from '../components/Starfield'
 import { createRoom } from '../lib/api'
+import { SITE } from '../lib/site'
 
 export default function HomePage() {
   const [, navigate] = useLocation()
@@ -36,11 +37,9 @@ export default function HomePage() {
         <div className="flex flex-col items-center gap-3 pb-8">
           <Mark size={48} className="text-emphasis" />
           <h1 className="text-xl font-semibold tracking-tight text-emphasis">
-            quickchat
+            {SITE.name}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            ephemeral rooms with live voice and video
-          </p>
+          <p className="text-sm text-muted-foreground">{SITE.tagline}</p>
         </div>
 
         <div className="rounded-lg border border-border bg-card shadow-sm">
@@ -75,9 +74,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <p className="pt-6 text-center font-mono text-xs text-dim">
-          nothing is recorded. rooms expire.
-        </p>
+        <p className="pt-6 text-center font-mono text-xs text-dim">{SITE.footer}</p>
       </div>
     </div>
   )

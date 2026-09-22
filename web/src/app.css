@@ -93,13 +93,18 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  a, button, input, [role='button'] {
+  a,
+  button,
+  input,
+  [role='button'] {
     transition-property: color, background-color, border-color;
     transition-duration: 150ms;
   }
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
 }
 

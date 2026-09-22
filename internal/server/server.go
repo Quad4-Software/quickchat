@@ -27,15 +27,21 @@ type Server struct {
 	rooms *rooms.Manager
 	hub   *hub.Hub
 	atts  *attach.Store
+	ping  func() error
 }
 
-func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, atts *attach.Store) *Server {
-	return &Server{cfg: cfg, rooms: rm, hub: h, atts: atts}
+func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, atts *attach.Store, ping func() error) *Server {
+	return &Server{cfg: cfg, rooms: rm, hub: h, atts: atts, ping: ping}
 }
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
+
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	r.Get("/readyz", s.readyz)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/rooms", s.createRoom)
@@ -56,7 +62,7 @@ func (s *Server) Handler() http.Handler {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
@@ -72,6 +78,14 @@ func sanitizeName(s string) string {
 		s = s[:32]
 	}
 	return s
+}
+
+func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
+	if err := s.ping(); err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) requireRoom(next http.Handler) http.Handler {
@@ -165,6 +179,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", m.Mime)
 	w.Header().Set("Content-Disposition",
 		`inline; filename="`+strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(m.Name)+`"`)
+	// #nosec G703 -- room and id were validated in Get before meta loads
 	http.ServeFile(w, r, s.atts.BlobPath(m))
 }
 

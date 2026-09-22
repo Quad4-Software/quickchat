@@ -20,8 +20,23 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
 
     make build        # pnpm install + vite build + go build to bin/quickchat
     make dev          # go run the backend on :8080
+    make test         # go tests + vitest
+    make check        # gofmt, vet, eslint, prettier check, tsc
     pnpm -C web dev   # vite dev server, proxies /api and /ws to :8080
-    pnpm -C web typecheck
+    pnpm -C web lhci  # lighthouse, needs CHROME_PATH on some systems
+    docker build -t quickchat:local .
+    docker compose up -d   # needs QUICKCHAT_DOMAIN, ACME_EMAIL, LIVEKIT_*
+
+## Deploy
+
+- Dockerfile: 3-stage (node pnpm web build, go build, distroless nonroot
+  uid 65532). All base images pinned by digest. Healthcheck is the
+  `quickchat healthcheck` subcommand, no shell needed.
+- docker-compose.yml: app + traefik, read-only, cap_drop ALL, tmpfs /tmp.
+- docker-compose.coolify.yml: single service, Coolify injects proxy
+  labels. Set Domains to https://host:8080.
+- Publishing lives in .github/workflows/docker.yml: ghcr push, zstd
+  compression, cosign keyless sign, SBOM and OpenVEX attestations.
 
 ## Layout
 
@@ -52,3 +67,9 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
 - Plain ASCII prose: no em dashes, no emojis, no semicolons in prose,
   no curly quotes, no unicode arrows.
 - Code comments are plain text, no backticks around identifiers.
+- All GitHub Actions pinned to full SHAs with version comments. Every
+  job starts with step-security/harden-runner, top-level permissions {}.
+- index.html carries a static landing skeleton for instant FCP. Keep it
+  in sync with web/src/pages/HomePage.tsx hero markup.
+- pnpm build runs scripts/inline-css.mjs which inlines the css bundle
+  into index.html to kill the render-blocking request.

@@ -69,6 +69,17 @@ func (h *Hub) PeerCount(room string) int {
 	return len(h.rooms[room])
 }
 
+// CloseAll disconnects every client. Call on shutdown.
+func (h *Hub) CloseAll() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, clients := range h.rooms {
+		for c := range clients {
+			_ = c.conn.Close(websocket.StatusGoingAway, "server shutdown")
+		}
+	}
+}
+
 type Client struct {
 	Peer
 	conn *websocket.Conn
@@ -135,7 +146,7 @@ func (h *Hub) unregister(c *Client) {
 	h.mu.Unlock()
 
 	close(c.send)
-	c.conn.Close(websocket.StatusNormalClosure, "")
+	_ = c.conn.Close(websocket.StatusNormalClosure, "")
 	if !empty {
 		h.broadcast(c.room, nil, envelope{"type": "peer_left", "peer": c.Peer})
 	}
@@ -179,6 +190,7 @@ func (h *Hub) chat(c *Client, in inbound) {
 }
 
 func msgID(room string, ts int64) string {
+	// #nosec G115 -- unix milliseconds are always positive
 	return room + "-" + peerID(uint64(ts))
 }
 

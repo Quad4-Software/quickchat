@@ -13,6 +13,7 @@ type Config struct {
 	LiveKitURL     string
 	LiveKitAPIKey  string
 	LiveKitSecret  string
+	PprofAddr      string
 	RoomTTL        time.Duration
 	AttachmentTTL  time.Duration
 	MaxUploadBytes int64
@@ -25,6 +26,7 @@ func Load() Config {
 		LiveKitURL:     os.Getenv("LIVEKIT_URL"),
 		LiveKitAPIKey:  os.Getenv("LIVEKIT_API_KEY"),
 		LiveKitSecret:  os.Getenv("LIVEKIT_API_SECRET"),
+		PprofAddr:      os.Getenv("QUICKCHAT_PPROF"),
 		RoomTTL:        durEnv("QUICKCHAT_ROOM_TTL", 7*24*time.Hour),
 		AttachmentTTL:  durEnv("QUICKCHAT_ATTACHMENT_TTL", 24*time.Hour),
 		MaxUploadBytes: int64Env("QUICKCHAT_MAX_UPLOAD", 64<<20),

@@ -32,31 +32,37 @@ type Store struct {
 }
 
 func New(dir string, ttl time.Duration, max int64) (*Store, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
 	return &Store{dir: dir, ttl: ttl, max: max}, nil
 }
 
 func (s *Store) Save(room, name, mime string, r io.Reader) (*Meta, error) {
+	if !validID(room) {
+		return nil, ErrNotFound
+	}
 	id := newID()
 	dir := filepath.Join(s.dir, room)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
 	blob := filepath.Join(dir, id+".blob")
-	f, err := os.Create(blob)
+	// #nosec G304 -- room is validated above and id is generated hex
+	f, err := os.OpenFile(blob, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
 	}
 	n, err := io.Copy(f, io.LimitReader(r, s.max+1))
-	f.Close()
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
 	if err != nil {
-		os.Remove(blob)
+		_ = os.Remove(blob)
 		return nil, err
 	}
 	if n > s.max {
-		os.Remove(blob)
+		_ = os.Remove(blob)
 		return nil, ErrTooLarge
 	}
 	if mime == "" {
@@ -68,20 +74,21 @@ func (s *Store) Save(room, name, mime string, r io.Reader) (*Meta, error) {
 	}
 	data, err := json.Marshal(m)
 	if err != nil {
-		os.Remove(blob)
+		_ = os.Remove(blob)
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, id+".json"), data, 0o644); err != nil {
-		os.Remove(blob)
+	if err := os.WriteFile(filepath.Join(dir, id+".json"), data, 0o600); err != nil {
+		_ = os.Remove(blob)
 		return nil, err
 	}
 	return m, nil
 }
 
 func (s *Store) Get(room, id string) (*Meta, error) {
-	if !validID(id) {
+	if !validID(room) || !validID(id) {
 		return nil, ErrNotFound
 	}
+	// #nosec G304 -- room and id are validated lowercase alnum above
 	data, err := os.ReadFile(filepath.Join(s.dir, room, id+".json"))
 	if err != nil {
 		return nil, ErrNotFound
@@ -103,7 +110,11 @@ func (s *Store) BlobPath(m *Meta) string {
 }
 
 func (s *Store) PurgeRoom(room string) {
-	os.RemoveAll(filepath.Join(s.dir, room))
+	if !validID(room) {
+		return
+	}
+	// #nosec G304 -- room is validated lowercase alnum above
+	_ = os.RemoveAll(filepath.Join(s.dir, room))
 }
 
 // Sweep removes expired attachments across all rooms.
@@ -125,6 +136,7 @@ func (s *Store) Sweep() {
 			if filepath.Ext(e.Name()) != ".json" {
 				continue
 			}
+			// #nosec G304 -- names come from ReadDir, never from requests
 			data, err := os.ReadFile(filepath.Join(roomDir, e.Name()))
 			if err != nil {
 				continue
@@ -139,14 +151,14 @@ func (s *Store) Sweep() {
 		}
 		// drop the room dir once empty
 		if empty, _ := isEmpty(roomDir); empty {
-			os.Remove(roomDir)
+			_ = os.Remove(roomDir)
 		}
 	}
 }
 
 func (s *Store) remove(room, id string) {
-	os.Remove(filepath.Join(s.dir, room, id+".blob"))
-	os.Remove(filepath.Join(s.dir, room, id+".json"))
+	_ = os.Remove(filepath.Join(s.dir, room, id+".blob"))
+	_ = os.Remove(filepath.Join(s.dir, room, id+".json"))
 }
 
 func isEmpty(dir string) (bool, error) {
@@ -175,6 +187,7 @@ func newID() string {
 }
 
 func sniff(path string) string {
+	// #nosec G304 -- path is a blob we just wrote under s.dir
 	f, err := os.Open(path)
 	if err != nil {
 		return "application/octet-stream"

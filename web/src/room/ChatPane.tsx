@@ -52,9 +52,7 @@ export default function ChatPane({ room, name }: { room: string; name: string })
                 TYPING_MS,
               ),
             )
-            setTyping((t) =>
-              t.some((x) => x.id === e.peer.id) ? t : [...t, e.peer],
-            )
+            setTyping((t) => (t.some((x) => x.id === e.peer.id) ? t : [...t, e.peer]))
           } else {
             setTyping((t) => t.filter((x) => x.id !== e.peer.id))
           }
@@ -62,12 +60,13 @@ export default function ChatPane({ room, name }: { room: string; name: string })
         }
       }
     }
-    s.onClose = () => setConnected(false)
+    s.onStateChange = setConnected
     s.connect(room, name)
     socketRef.current = s
+    const timers = typingTimers.current
     return () => {
       s.close()
-      typingTimers.current.forEach((t) => window.clearTimeout(t))
+      timers.forEach((t) => window.clearTimeout(t))
     }
   }, [room, name])
 
@@ -146,8 +145,8 @@ export default function ChatPane({ room, name }: { room: string; name: string })
         ))}
         {typing.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            {typing.map((p) => p.name).join(', ')}{' '}
-            {typing.length === 1 ? 'is' : 'are'} typing...
+            {typing.map((p) => p.name).join(', ')} {typing.length === 1 ? 'is' : 'are'}{' '}
+            typing...
           </p>
         )}
       </div>
@@ -206,12 +205,8 @@ function MessageRow({ room, msg }: { room: string; msg: ChatMessage }) {
           {timestamp(msg.ts)}
         </span>
       </div>
-      {msg.body && (
-        <p className="break-words text-sm text-foreground">{msg.body}</p>
-      )}
-      {msg.attachment && (
-        <Attachment room={room} att={msg.attachment} />
-      )}
+      {msg.body && <p className="break-words text-sm text-foreground">{msg.body}</p>}
+      {msg.attachment && <Attachment room={room} att={msg.attachment} />}
     </div>
   )
 }

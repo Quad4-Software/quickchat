@@ -50,10 +50,7 @@ function StageInner() {
         ) : (
           <div className="grid h-fit grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {tracks.map((t) => (
-              <Tile
-                key={`${t.participant.identity}-${t.source}`}
-                track={t}
-              />
+              <Tile key={`${t.participant.identity}-${t.source}`} track={t} />
             ))}
           </div>
         )}
@@ -91,9 +88,7 @@ function Tile({ track }: { track: TrackRef }) {
         <span className="max-w-32 truncate text-xs font-medium text-foreground">
           {track.participant.name || track.participant.identity}
         </span>
-        {!track.participant.isMicrophoneEnabled && (
-          <MicOffIcon />
-        )}
+        {!track.participant.isMicrophoneEnabled && <MicOffIcon />}
         {isScreen && <MonitorUp className="size-3 text-muted-foreground" />}
       </div>
     </div>

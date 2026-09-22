@@ -12,9 +12,32 @@ dev:
 
 test:
 	go test ./...
+	pnpm -C web test
+
+check:
+	test -z "$$(gofmt -l .)"
+	go vet ./...
+	pnpm -C web lint
+	pnpm -C web format:check
 	pnpm -C web typecheck
 
-clean:
-	rm -rf bin web/dist
+lint:
+	pnpm -C web lint
 
-.PHONY: all build web dev test clean
+format:
+	gofmt -w .
+	pnpm -C web format
+
+docker:
+	docker build -t quickchat:local .
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+clean:
+	rm -rf bin web/dist web/.lighthouseci
+
+.PHONY: all build web dev test check lint format docker up down clean

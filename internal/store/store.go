@@ -27,13 +27,15 @@ func Open(path string) (*Store, error) {
 		created_at INTEGER NOT NULL
 	)`)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return &Store{db: db}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+func (s *Store) Ping() error { return s.db.Ping() }
 
 func (s *Store) PutRoom(id string) error {
 	_, err := s.db.Exec(`INSERT OR IGNORE INTO rooms (id, created_at) VALUES (?, ?)`,
@@ -54,7 +56,7 @@ func (s *Store) DeleteRoom(id string) error {
 
 // ExpiredRooms returns room IDs created before cutoff.
 func (s *Store) ExpiredRooms(cutoff time.Time) ([]string, error) {
-	rows, err := s.db.Query(`SELECT id FROM rooms WHERE created_at < ?`, cutoff.Unix())
+	rows, err := s.db.Query(`SELECT id FROM rooms WHERE created_at <= ?`, cutoff.Unix())
 	if err != nil {
 		return nil, err
 	}

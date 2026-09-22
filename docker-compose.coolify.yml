@@ -1,0 +1,64 @@
+# Coolify deployment for quickchat.
+#
+# Setup: create a resource with Build Pack "Docker Compose", Base
+# Directory "/", Docker Compose Location "/docker-compose.coolify.yml".
+# Set the service's Domains field to the public URL including the
+# internal port, for example https://chat.example.com:8080.
+#
+# Coolify injects its management and proxy labels itself, so none are
+# defined here. The ghcr.io package must be public or the server must
+# have a registry credential configured for it.
+#
+# Required environment variables in Coolify:
+#   LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+# Optional: QUICKCHAT_ROOM_TTL, QUICKCHAT_ATTACHMENT_TTL,
+#   QUICKCHAT_MAX_UPLOAD, TZ
+name: quickchat
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  quickchat:
+    image: ghcr.io/quad4-software/quickchat:latest
+    user: "65532:65532"
+    environment:
+      - QUICKCHAT_ADDR=:8080
+      - QUICKCHAT_DATA=/data
+      - QUICKCHAT_ROOM_TTL=${QUICKCHAT_ROOM_TTL:-168h}
+      - QUICKCHAT_ATTACHMENT_TTL=${QUICKCHAT_ATTACHMENT_TTL:-24h}
+      - QUICKCHAT_MAX_UPLOAD=${QUICKCHAT_MAX_UPLOAD:-67108864}
+      - LIVEKIT_URL=${LIVEKIT_URL:?}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?}
+      - SERVICE_FQDN_QUICKCHAT_8080
+      - TZ=${TZ:-UTC}
+    expose:
+      - "8080"
+    volumes:
+      - quickchat-data:/data
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/quickchat", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    logging: *default-logging
+
+volumes:
+  quickchat-data:

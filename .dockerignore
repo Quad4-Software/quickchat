@@ -1,0 +1,14 @@
+.git
+.github
+.agents
+bin
+data
+web/node_modules
+web/dist
+web/.lighthouseci
+**/coverage
+Dockerfile
+docker-compose.yml
+docker-compose.coolify.yml
+*.md
+LICENSE
