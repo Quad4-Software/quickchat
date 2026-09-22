@@ -10,3 +10,4 @@ web/.e2e-data/
 web/test-results/
 web/playwright-report/
 *.tsbuildinfo
+.live-data/

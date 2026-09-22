@@ -10,12 +10,21 @@ import {
 } from 'lucide-react'
 import { Mesh, newNonce } from '../lib/mesh'
 import type { ChatSession, MeshOptions } from '../lib/mesh'
+import { useRegisterStats } from '../lib/stats'
+import type { StatRow } from '../lib/stats'
 import { activityBegin, activityEnd } from '../lib/activity'
 import { SITE } from '../lib/site'
 import { fileSize } from '../lib/format'
 import { cn } from '../lib/cn'
 import MessageRow from './MessageRow'
 import type { ChatMessage, FileMeta, FileRef, Peer } from '../lib/types'
+
+const toneForIce = (s: RTCIceConnectionState) =>
+  s === 'connected' || s === 'completed'
+    ? ('ok' as const)
+    : s === 'failed' || s === 'disconnected'
+      ? ('bad' as const)
+      : ('warn' as const)
 
 const MAX_MESSAGES = 500
 // blobs live in memory only; bound total retention so a busy room can
@@ -59,6 +68,48 @@ export default function ChatPane({
 
   const meshRef = useRef<ChatSession | null>(null)
   const selfRef = useRef<Peer>({ id: 'me', name })
+
+  // per-peer p2p link stats for the debug panel
+  useRegisterStats('p2p mesh', async () => {
+    const rows: StatRow[] = [
+      {
+        label: 'signaling',
+        value: connected ? 'online' : 'reconnecting',
+        tone: connected ? 'ok' : 'warn',
+      },
+      { label: 'peers', value: String(peers.length) },
+    ]
+    const groups: { heading: string; rows: StatRow[] }[] = []
+    const m = meshRef.current
+    if (m?.stats) {
+      for (const s of await m.stats()) {
+        groups.push({
+          heading: s.peer.name,
+          rows: [
+            {
+              label: 'rtt',
+              value: s.rttMs == null ? '-' : `${s.rttMs} ms`,
+              tone:
+                s.rttMs == null
+                  ? 'warn'
+                  : s.rttMs < 150
+                    ? 'ok'
+                    : s.rttMs < 500
+                      ? 'warn'
+                      : 'bad',
+            },
+            { label: 'ice', value: s.iceState, tone: toneForIce(s.iceState) },
+            { label: 'chat channel', value: s.channel },
+            {
+              label: 'data',
+              value: `${fileSize(s.sent)} sent, ${fileSize(s.received)} recv`,
+            },
+          ],
+        })
+      }
+    }
+    return { title: 'p2p mesh', rows, groups }
+  })
   const listRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const pinnedRef = useRef(true)

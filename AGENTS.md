@@ -59,12 +59,16 @@ Software.
     internal/server/     chi routes, embedded SPA, openapi.yaml
     web/                 React app, embed.go exports web.Dist (embeds dist/)
     web/src/pages/       HomePage, RoomPage, DemoPage, DocsPage (scalar, lazy)
-    web/src/room/        Stage (livekit av), DemoStage, ChatPane, MessageRow
+    web/src/room/        Stage (livekit av), DemoStage, ChatPane, MessageRow,
+                         DebugPanel (rtc stats overlay)
     web/src/lib/signal.ts   ws client: presence + signal relay only
     web/src/lib/mesh.ts     webrtc datachannel mesh: chat, typing, files
+    web/src/lib/stats.ts    debug panel collector registry + hooks
+    web/src/lib/StatsProvider.tsx  stats registry provider component
     web/src/lib/pwa.ts      service worker registration + update flow
-    web/src/lib/e2ee.ts  url-fragment media keys for livekit e2ee
-    web/e2e/             playwright + axe specs against the real binary
+    web/src/lib/e2ee.ts  url-fragment media keys + e2ee support check
+    web/e2e/             playwright + axe specs against the real binary,
+                         live.test.ts needs LIVEKIT_* env to run
 
 ## Wire protocol
 
@@ -115,3 +119,12 @@ Software.
   use import.meta.env.BASE_URL so they resolve under a pages subpath.
 - #root is locked to 100dvh with document overflow hidden; every region
   scrolls internally, never the page. Keep room panels min-h-0.
+- Playwright runs four projects: chromium desktop+mobile, firefox,
+  webkit. live.test.ts activates only when LIVEKIT_URL is set. WebKit
+  headless cannot resolve its own mdns ice candidates, so p2p mesh specs
+  skip there; media e2ee is unsupported in webkit and must degrade to
+  dtls-srtp with a visible warning.
+- Remote participant volume lives in Stage via webAudioMix gain nodes
+  (boost above 100 percent) and persists in localStorage qc-volumes.
+- DebugPanel polls registered stats collectors every 2s while open; do
+  not run getStats or other polling when the panel is closed.

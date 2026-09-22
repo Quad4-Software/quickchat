@@ -89,12 +89,25 @@ export interface MeshOptions {
 // ChatSession is the transport surface ChatPane needs. Mesh implements
 // it over real WebRTC channels; DemoMesh implements it with scripted
 // peers so the app can run with no server at all.
+export interface PeerLinkStats {
+  peer: Peer
+  /** round trip time in ms from the selected candidate pair */
+  rttMs?: number
+  iceState: RTCIceConnectionState
+  channel: string
+  /** bytes sent and received across all channels on this pair */
+  sent: number
+  received: number
+}
+
 export interface ChatSession {
   connect(): void
   close(): void
   broadcastChat(body: string, file?: FileMeta): string
   broadcastTyping(on: boolean): void
   sendFile(file: Blob, meta: FileMeta, msgId: string): void
+  /** per-peer link stats for the debug panel; demo sessions may omit */
+  stats?(): Promise<PeerLinkStats[]>
 }
 
 // Mesh maintains a full WebRTC datachannel mesh between room peers. The
@@ -149,6 +162,38 @@ export class Mesh implements ChatSession {
     for (const p of this.conns.values()) this.teardown(p)
     this.conns.clear()
     this.self = null
+  }
+
+  // stats reads the selected candidate pair on each peer connection for
+  // round trip time, plus channel and byte counters for the debug panel
+  async stats(): Promise<PeerLinkStats[]> {
+    const out: PeerLinkStats[] = []
+    for (const p of this.conns.values()) {
+      const s: PeerLinkStats = {
+        peer: p.peer,
+        iceState: p.pc.iceConnectionState,
+        channel: p.chat?.readyState ?? 'none',
+        sent: 0,
+        received: 0,
+      }
+      try {
+        const report = await p.pc.getStats()
+        report.forEach((v) => {
+          if (v.type === 'candidate-pair' && v.state === 'succeeded' && v.nominated) {
+            if (typeof v.currentRoundTripTime === 'number') {
+              s.rttMs = Math.round(v.currentRoundTripTime * 1000)
+            }
+          } else if (v.type === 'data-channel') {
+            s.sent += Number(v.bytesSent ?? 0)
+            s.received += Number(v.bytesReceived ?? 0)
+          }
+        })
+      } catch {
+        // closed connection mid-poll: report what we have
+      }
+      out.push(s)
+    }
+    return out
   }
 
   // ---- signaling ----

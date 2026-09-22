@@ -1,10 +1,12 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
-import { Check, Copy, Dices, DoorOpen, Lock } from 'lucide-react'
+import { Activity, Check, Copy, Dices, DoorOpen, Lock } from 'lucide-react'
 import Mark from '../components/Mark'
 import ChatPane from '../room/ChatPane'
+import DebugPanel from '../room/DebugPanel'
+import StatsProvider from '../lib/StatsProvider'
 import { getRoom, livekitToken } from '../lib/api'
-import { keyFromHash } from '../lib/e2ee'
+import { keyFromHash, mediaE2EESupported } from '../lib/e2ee'
 import { randomName } from '../lib/names'
 import { SITE } from '../lib/site'
 import { useMediaQuery } from '../lib/useMedia'
@@ -19,6 +21,8 @@ export default function RoomPage({ id }: { id: string }) {
   const [joined, setJoined] = useState(false)
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
   const [copied, setCopied] = useState(false)
+  const [debug, setDebug] = useState(false)
+  const closeDebug = useCallback(() => setDebug(false), [])
   // read once at mount: the fragment carries the shared media key and is
   // stable for the lifetime of the page
   const [e2eeKey] = useState(() => keyFromHash(location.hash))
@@ -29,8 +33,12 @@ export default function RoomPage({ id }: { id: string }) {
     const v = Number(localStorage.getItem('qc-chat-w'))
     return v >= 240 && v <= 720 ? v : 320
   })
-  function resizeChat(e: React.PointerEvent) {
+  function resizeChat(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault()
+    // pointer capture retargets all events to the handle so a release or
+    // cancel outside the window still ends the drag
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
     const startX = e.clientX
     const startW = asideRef.current?.getBoundingClientRect().width ?? chatW
     let latest = startW
@@ -38,12 +46,15 @@ export default function RoomPage({ id }: { id: string }) {
       latest = Math.min(720, Math.max(240, startW + (startX - ev.clientX)))
       setChatW(latest)
     }
-    const up = () => {
-      window.removeEventListener('pointermove', move)
+    const end = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', end)
+      el.removeEventListener('pointercancel', end)
       localStorage.setItem('qc-chat-w', String(latest))
     }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up, { once: true })
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', end)
+    el.addEventListener('pointercancel', end)
   }
 
   useEffect(() => {
@@ -151,89 +162,108 @@ export default function RoomPage({ id }: { id: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-        <Link href="/" className="flex items-center gap-2 text-emphasis">
-          <Mark size={20} />
-          <span className="text-sm font-semibold tracking-tight">{SITE.name}</span>
-        </Link>
-        <h1 className="font-mono text-xs font-normal text-muted-foreground">{id}</h1>
-        {e2eeKey && (
-          <span
-            className="flex items-center gap-1 font-mono text-[10px] text-success"
-            title="media encryption key is shared through the link fragment"
-          >
-            <Lock className="size-3" aria-hidden />
-            e2ee
-          </span>
-        )}
-        <div className="flex-1" />
-        <button
-          onClick={copyLink}
-          className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
-        >
-          {copied ? (
-            <Check className="size-3.5 text-success" />
-          ) : (
-            <Copy className="size-3.5" />
-          )}
-          {copied ? 'copied' : 'copy link'}
-        </button>
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
-        >
-          <DoorOpen className="size-3.5" />
-          leave
-        </Link>
-      </header>
-
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <main id="main" className="min-h-0 min-w-0 flex-1">
-          {grant ? (
-            <Suspense
-              fallback={
-                <div className="flex h-full items-center justify-center p-6">
-                  <p className="text-sm text-muted-foreground">connecting to voice...</p>
-                </div>
-              }
+    <StatsProvider>
+      <div className="flex h-full flex-col">
+        <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+          <Link href="/" className="flex items-center gap-2 text-emphasis">
+            <Mark size={20} />
+            <span className="text-sm font-semibold tracking-tight">{SITE.name}</span>
+          </Link>
+          <h1 className="font-mono text-xs font-normal text-muted-foreground">{id}</h1>
+          {e2eeKey && mediaE2EESupported() && (
+            <span
+              className="flex items-center gap-1 font-mono text-[10px] text-success"
+              title="media encryption key is shared through the link fragment"
             >
-              <Stage grant={grant} e2eeKey={e2eeKey} />
-            </Suspense>
-          ) : (
-            <div className="flex h-full items-center justify-center p-6">
-              <p className="text-sm text-muted-foreground">
-                {info?.livekit
-                  ? 'connecting to voice...'
-                  : 'voice and video unavailable on this server'}
-              </p>
-            </div>
+              <Lock className="size-3" aria-hidden />
+              e2ee
+            </span>
           )}
-        </main>
-        <aside
-          ref={asideRef}
-          aria-label="chat"
-          style={isMd ? { width: `${chatW}px` } : undefined}
-          className="relative flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-auto md:flex-none md:border-l md:border-t-0"
-        >
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="resize chat panel"
-            title="drag to resize"
-            onPointerDown={resizeChat}
-            className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover active:bg-hover md:block"
-          />
-          {info && (
-            <ChatPane
-              room={id}
-              name={name.trim() || 'anon'}
-              iceServers={info.iceServers ?? []}
-              maxFileSize={info.maxFileSize}
+          <div className="flex-1" />
+          <button
+            onClick={() => setDebug(!debug)}
+            aria-label="connection stats"
+            aria-pressed={debug}
+            title="connection stats"
+            className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground aria-pressed:text-emphasis"
+          >
+            <Activity className="size-3.5" />
+          </button>
+          <button
+            onClick={copyLink}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
+          >
+            {copied ? (
+              <Check className="size-3.5 text-success" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+            {copied ? 'copied' : 'copy link'}
+          </button>
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
+          >
+            <DoorOpen className="size-3.5" />
+            leave
+          </Link>
+        </header>
+
+        <div className="relative flex min-h-0 flex-1 flex-col md:flex-row">
+          <main id="main" className="min-h-0 min-w-0 flex-1">
+            {grant ? (
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center p-6">
+                    <p className="text-sm text-muted-foreground">
+                      connecting to voice...
+                    </p>
+                  </div>
+                }
+              >
+                <Stage
+                  grant={grant}
+                  e2eeKey={e2eeKey}
+                  onDebug={() => setDebug(!debug)}
+                  debugOpen={debug}
+                />
+              </Suspense>
+            ) : (
+              <div className="flex h-full items-center justify-center p-6">
+                <p className="text-sm text-muted-foreground">
+                  {info?.livekit
+                    ? 'connecting to voice...'
+                    : 'voice and video unavailable on this server'}
+                </p>
+              </div>
+            )}
+          </main>
+          <aside
+            ref={asideRef}
+            aria-label="chat"
+            style={isMd ? { width: `${chatW}px` } : undefined}
+            className="relative flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-auto md:flex-none md:border-l md:border-t-0"
+          >
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="resize chat panel"
+              title="drag to resize"
+              onPointerDown={resizeChat}
+              className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover active:bg-hover md:block"
             />
-          )}
-        </aside>
+            {info && (
+              <ChatPane
+                room={id}
+                name={name.trim() || 'anon'}
+                iceServers={info.iceServers ?? []}
+                maxFileSize={info.maxFileSize}
+              />
+            )}
+          </aside>
+          {debug && <DebugPanel onClose={closeDebug} />}
+        </div>
       </div>
-    </div>
+    </StatsProvider>
   )
 }

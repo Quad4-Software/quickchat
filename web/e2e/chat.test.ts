@@ -38,7 +38,17 @@ test('dice button fills a random name', async ({ page }) => {
   await expect(input).not.toHaveValue('')
 })
 
-test('two clients exchange chat over the p2p mesh', async ({ browser }) => {
+// headless webkit cannot resolve the mdns ice candidates it emits, so
+// datachannel peers in the same browser process never connect. This is a
+// webkit platform limitation, not an app bug.
+const noWebkitMesh = (browserName: string) =>
+  test.skip(
+    browserName === 'webkit',
+    'webkit headless cannot resolve mdns ice candidates',
+  )
+
+test('two clients exchange chat over the p2p mesh', async ({ browser, browserName }) => {
+  noWebkitMesh(browserName)
   const ctx1 = await browser.newContext()
   const ctx2 = await browser.newContext()
   const alice = await ctx1.newPage()
@@ -68,7 +78,8 @@ test('two clients exchange chat over the p2p mesh', async ({ browser }) => {
   await ctx2.close()
 })
 
-test('typing indicator appears for the peer', async ({ browser }) => {
+test('typing indicator appears for the peer', async ({ browser, browserName }) => {
+  noWebkitMesh(browserName)
   const ctx1 = await browser.newContext()
   const ctx2 = await browser.newContext()
   const alice = await ctx1.newPage()
@@ -86,7 +97,8 @@ test('typing indicator appears for the peer', async ({ browser }) => {
   await ctx2.close()
 })
 
-test('file transfers peer to peer', async ({ browser }) => {
+test('file transfers peer to peer', async ({ browser, browserName }) => {
+  noWebkitMesh(browserName)
   const ctx1 = await browser.newContext()
   const ctx2 = await browser.newContext()
   const alice = await ctx1.newPage()
