@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
-import { Check, Copy, Dices, DoorOpen } from 'lucide-react'
+import { Check, Copy, Dices, DoorOpen, Lock } from 'lucide-react'
 import Mark from '../components/Mark'
 import ChatPane from '../room/ChatPane'
 import { getRoom, livekitToken } from '../lib/api'
+import { keyFromHash } from '../lib/e2ee'
 import { randomName } from '../lib/names'
 import { SITE } from '../lib/site'
 import type { LiveKitGrant, RoomInfo } from '../lib/types'
@@ -17,6 +18,23 @@ export default function RoomPage({ id }: { id: string }) {
   const [joined, setJoined] = useState(false)
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
   const [copied, setCopied] = useState(false)
+  // read once at mount: the fragment carries the shared media key and is
+  // stable for the lifetime of the page
+  const [e2eeKey] = useState(() => keyFromHash(location.hash))
+  const copyTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    document.title = `${id} - ${SITE.name}`
+    return () => {
+      document.title = SITE.name
+    }
+  }, [id])
 
   useEffect(() => {
     getRoom(id)
@@ -41,13 +59,14 @@ export default function RoomPage({ id }: { id: string }) {
   function copyLink() {
     navigator.clipboard.writeText(location.href).then(() => {
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1500)
     })
   }
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
+      <main id="main" className="flex h-full flex-col items-center justify-center gap-4">
         <Mark size={40} className="text-muted-foreground" />
         <p className="text-sm text-muted-foreground">{error}</p>
         <Link
@@ -56,13 +75,13 @@ export default function RoomPage({ id }: { id: string }) {
         >
           home
         </Link>
-      </div>
+      </main>
     )
   }
 
   if (!joined) {
     return (
-      <div className="flex h-full items-center justify-center px-4">
+      <main id="main" className="flex h-full items-center justify-center px-4">
         <form
           onSubmit={join}
           className="w-full max-w-xs rounded-lg border border-border bg-card p-4 shadow-sm"
@@ -101,7 +120,7 @@ export default function RoomPage({ id }: { id: string }) {
             join room
           </button>
         </form>
-      </div>
+      </main>
     )
   }
 
@@ -112,7 +131,16 @@ export default function RoomPage({ id }: { id: string }) {
           <Mark size={20} />
           <span className="text-sm font-semibold tracking-tight">{SITE.name}</span>
         </Link>
-        <span className="font-mono text-xs text-muted-foreground">{id}</span>
+        <h1 className="font-mono text-xs font-normal text-muted-foreground">{id}</h1>
+        {e2eeKey && (
+          <span
+            className="flex items-center gap-1 font-mono text-[10px] text-success"
+            title="media encryption key is shared through the link fragment"
+          >
+            <Lock className="size-3" aria-hidden />
+            e2ee
+          </span>
+        )}
         <div className="flex-1" />
         <button
           onClick={copyLink}
@@ -135,7 +163,7 @@ export default function RoomPage({ id }: { id: string }) {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <main className="min-h-0 min-w-0 flex-1">
+        <main id="main" className="min-h-0 min-w-0 flex-1">
           {grant ? (
             <Suspense
               fallback={
@@ -144,7 +172,7 @@ export default function RoomPage({ id }: { id: string }) {
                 </div>
               }
             >
-              <Stage grant={grant} />
+              <Stage grant={grant} e2eeKey={e2eeKey} />
             </Suspense>
           ) : (
             <div className="flex h-full items-center justify-center p-6">
@@ -156,7 +184,10 @@ export default function RoomPage({ id }: { id: string }) {
             </div>
           )}
         </main>
-        <aside className="min-h-0 w-full border-t border-border md:w-80 md:border-l md:border-t-0">
+        <aside
+          aria-label="chat"
+          className="flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-80 md:flex-none md:border-l md:border-t-0"
+        >
           <ChatPane room={id} name={name.trim() || 'anon'} />
         </aside>
       </div>

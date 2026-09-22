@@ -2,10 +2,12 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net"
 	"net/http"
 	"path"
 	"strings"
@@ -18,25 +20,57 @@ import (
 	"quad4/quickchat/internal/config"
 	"quad4/quickchat/internal/hub"
 	"quad4/quickchat/internal/lktoken"
+	"quad4/quickchat/internal/ratelimit"
 	"quad4/quickchat/internal/rooms"
 	"quad4/quickchat/web"
 )
 
 type Server struct {
-	cfg   config.Config
-	rooms *rooms.Manager
-	hub   *hub.Hub
-	atts  *attach.Store
-	ping  func() error
+	cfg    config.Config
+	rooms  *rooms.Manager
+	hub    *hub.Hub
+	atts   *attach.Store
+	ping   func(ctx context.Context) error
+	create *ratelimit.Limiter
+	action *ratelimit.Limiter
+	socket *ratelimit.Limiter
 }
 
-func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, atts *attach.Store, ping func() error) *Server {
-	return &Server{cfg: cfg, rooms: rm, hub: h, atts: atts, ping: ping}
+func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, atts *attach.Store, ping func(ctx context.Context) error) *Server {
+	return &Server{
+		cfg:    cfg,
+		rooms:  rm,
+		hub:    h,
+		atts:   atts,
+		ping:   ping,
+		create: ratelimit.New(rate(cfg.RateCreatePerMin, 12), burst(rate(cfg.RateCreatePerMin, 12))),
+		action: ratelimit.New(rate(cfg.RateActionPerMin, 60), burst(rate(cfg.RateActionPerMin, 60))),
+		socket: ratelimit.New(rate(cfg.RateSocketPerMin, 30), burst(rate(cfg.RateSocketPerMin, 30))),
+	}
+}
+
+// rate falls back to the default when unset or non-positive.
+func rate(v, fallback int) int {
+	if v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+// burst allows short spikes at half the per-minute rate.
+func burst(perMin int) int {
+	if perMin < 4 {
+		return perMin
+	}
+	return perMin / 2
 }
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
+	r.Use(securityHeaders(s.cfg.LiveKitURL))
+	r.Use(gzipped)
+	r.Use(cacheControl)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -48,15 +82,43 @@ func (s *Server) Handler() http.Handler {
 		r.Route("/rooms/{room}", func(r chi.Router) {
 			r.Use(s.requireRoom)
 			r.Get("/", s.getRoom)
-			r.Get("/token", s.livekitToken)
-			r.Post("/attachments", s.upload)
+			r.With(s.limited(s.action)).Get("/token", s.livekitToken)
+			r.With(s.limited(s.action)).Post("/attachments", s.upload)
 			r.Get("/attachments/{att}", s.download)
 		})
 	})
-	r.Get("/ws/rooms/{room}", s.chatWS)
+	r.With(s.limited(s.socket)).Get("/ws/rooms/{room}", s.chatWS)
 
 	r.Handle("/*", spaHandler())
 	return r
+}
+
+// clientIP resolves the caller ip, honoring X-Forwarded-For only when the
+// deployment is explicitly configured behind a trusted proxy.
+func (s *Server) clientIP(r *http.Request) string {
+	if s.cfg.TrustedProxy {
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			return strings.TrimSpace(strings.Split(fwd, ",")[0])
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// limited rejects requests that exceed the per-ip token bucket.
+func (s *Server) limited(l *ratelimit.Limiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !l.Allow(s.clientIP(r)) {
+				writeErr(w, http.StatusTooManyRequests, "rate limited")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -81,7 +143,7 @@ func sanitizeName(s string) string {
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
-	if err := s.ping(); err != nil {
+	if err := s.ping(r.Context()); err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "store unavailable")
 		return
 	}
@@ -90,7 +152,7 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) requireRoom(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.rooms.Exists(chi.URLParam(r, "room")) {
+		if !s.rooms.Exists(r.Context(), chi.URLParam(r, "room")) {
 			writeErr(w, http.StatusNotFound, "room not found")
 			return
 		}
@@ -99,7 +161,11 @@ func (s *Server) requireRoom(next http.Handler) http.Handler {
 }
 
 func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
-	id, err := s.rooms.Create()
+	if !s.create.Allow(s.clientIP(r)) {
+		writeErr(w, http.StatusTooManyRequests, "rate limited")
+		return
+	}
+	id, err := s.rooms.Create(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create room")
 		return
@@ -163,6 +229,10 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusRequestEntityTooLarge, "file too large")
 		return
 	}
+	if errors.Is(err, attach.ErrInvalid) {
+		writeErr(w, http.StatusBadRequest, "invalid room")
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "upload failed")
 		return
@@ -177,15 +247,19 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", m.Mime)
+	// attachment disposition prevents uploaded html/svg from executing
+	// on the app origin. img previews still work since disposition is
+	// ignored for subresource loads.
 	w.Header().Set("Content-Disposition",
-		`inline; filename="`+strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(m.Name)+`"`)
+		`attachment; filename="`+strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(m.Name)+`"`)
+	w.Header().Set("Content-Security-Policy", "sandbox")
 	// #nosec G703 -- room and id were validated in Get before meta loads
 	http.ServeFile(w, r, s.atts.BlobPath(m))
 }
 
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	room := chi.URLParam(r, "room")
-	if !s.rooms.Exists(room) {
+	if !s.rooms.Exists(r.Context(), room) {
 		writeErr(w, http.StatusNotFound, "room not found")
 		return
 	}

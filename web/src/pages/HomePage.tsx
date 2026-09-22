@@ -4,6 +4,7 @@ import { ArrowRight, Plus } from 'lucide-react'
 import Mark from '../components/Mark'
 import Starfield from '../components/Starfield'
 import { createRoom } from '../lib/api'
+import { generateKey } from '../lib/e2ee'
 import { SITE } from '../lib/site'
 
 export default function HomePage() {
@@ -17,7 +18,7 @@ export default function HomePage() {
     setError('')
     try {
       const { id } = await createRoom()
-      navigate(`/r/${id}`)
+      navigate(`/r/${id}#e2ee=${generateKey()}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'could not create room')
       setBusy(false)
@@ -26,12 +27,15 @@ export default function HomePage() {
 
   function onJoin(e: React.FormEvent) {
     e.preventDefault()
-    const id = join.trim().split('/').pop() ?? ''
-    if (id) navigate(`/r/${id}`)
+    // accept a bare id or a pasted room url, keeping any e2ee fragment
+    const v = join.trim()
+    const hash = v.includes('#') ? v.slice(v.indexOf('#')) : ''
+    const id = v.split('#')[0].split('/').filter(Boolean).pop() ?? ''
+    if (id) navigate(`/r/${id}${hash}`)
   }
 
   return (
-    <div className="relative flex h-full items-center justify-center px-4">
+    <main id="main" className="relative flex h-full items-center justify-center px-4">
       <Starfield />
       <div className="relative w-full max-w-sm">
         <div className="flex flex-col items-center gap-3 pb-8">
@@ -76,6 +80,6 @@ export default function HomePage() {
 
         <p className="pt-6 text-center font-mono text-xs text-dim">{SITE.footer}</p>
       </div>
-    </div>
+    </main>
   )
 }

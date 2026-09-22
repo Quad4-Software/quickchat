@@ -12,7 +12,7 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
 - Tailwind CSS 4 via @tailwindcss/vite, void theme tokens in web/src/app.css
 - @livekit/components-react primitives (no components-styles, tiles are
   hand-styled), wouter for routing, lucide-react icons
-- pnpm 11, pinned by packageManager. Install is hardened in
+- pnpm 12, pinned by packageManager. Install is hardened in
   web/pnpm-workspace.yaml: minimumReleaseAge 7 days, strictDepBuilds,
   blockExoticSubdeps
 
@@ -20,8 +20,9 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
 
     make build        # pnpm install + vite build + go build to bin/quickchat
     make dev          # go run the backend on :8080
-    make test         # go tests + vitest
-    make check        # gofmt, vet, eslint, prettier check, tsc
+    make test         # go tests incl race + vitest
+    make test-e2e     # playwright + axe, builds web then runs the go binary
+    make check        # gofmt, vet, golangci-lint, eslint, prettier, tsc
     pnpm -C web dev   # vite dev server, proxies /api and /ws to :8080
     pnpm -C web lhci  # lighthouse, needs CHROME_PATH on some systems
     docker build -t quickchat:local .
@@ -50,7 +51,9 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
     internal/server/     chi routes, embedded SPA with fallback
     web/                 React app, embed.go exports web.Dist (embeds dist/)
     web/src/pages/       HomePage, RoomPage
-    web/src/room/        Stage (livekit av), ChatPane (ws chat)
+    web/src/room/        Stage (livekit av), ChatPane (ws chat), MessageRow
+    web/src/lib/e2ee.ts  url-fragment media keys for livekit e2ee
+    web/e2e/             playwright + axe specs against the real binary
 
 ## Rules
 
@@ -71,5 +74,9 @@ serves everything. License: 0BSD. Copyright Quad4 Software.
   job starts with step-security/harden-runner, top-level permissions {}.
 - index.html carries a static landing skeleton for instant FCP. Keep it
   in sync with web/src/pages/HomePage.tsx hero markup.
-- pnpm build runs scripts/inline-css.mjs which inlines the css bundle
-  into index.html to kill the render-blocking request.
+- pnpm build runs scripts/clean-dist.mjs first (keeps dist/.gitkeep for
+  go:embed), then vite build, then scripts/inline-css.mjs which inlines
+  the css bundle into index.html to kill the render-blocking request.
+- The vite test config excludes web/e2e so vitest never picks up
+  playwright specs. e2e raises QUICKCHAT_RATE_* limits via env so the
+  per-ip buckets do not throttle the suite.

@@ -15,7 +15,10 @@ export interface ChatMessage {
   peer: Peer
   body?: string
   attachment?: AttachmentMeta
+  nonce?: string
   ts: number
+  /** local only: awaiting server echo */
+  pending?: boolean
 }
 
 export type ServerEvent =

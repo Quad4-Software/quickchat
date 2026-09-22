@@ -85,6 +85,38 @@ func TestInvalidID(t *testing.T) {
 	}
 }
 
+func TestRoomTraversalRejected(t *testing.T) {
+	s := newTmp(t, time.Hour, 1<<20)
+	for _, room := range []string{"../x", "..", "a/b", "UPPER", "r oom"} {
+		if _, err := s.Save(room, "f", "", bytes.NewReader([]byte("x"))); err == nil {
+			t.Fatalf("room %q must be rejected", room)
+		}
+		if _, err := s.Get(room, "abc"); err != ErrNotFound {
+			t.Fatalf("room %q lookup must fail", room)
+		}
+	}
+	s.PurgeRoom("../..") // must be a no-op
+}
+
+func FuzzValidID(f *testing.F) {
+	for _, s := range []string{"abc", "a1", "../x", "", "A B", string(bytes.Repeat([]byte{'z'}, 64))} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, id string) {
+		ok := validID(id)
+		if ok && (id == "" || len(id) > 64) {
+			t.Fatalf("validID(%q) accepted out of bounds", id)
+		}
+		if ok {
+			for _, c := range id {
+				if (c < 'a' || c > 'z') && (c < '0' || c > '9') {
+					t.Fatalf("validID(%q) accepted bad char", id)
+				}
+			}
+		}
+	})
+}
+
 func TestSweepRemovesExpired(t *testing.T) {
 	s := newTmp(t, time.Millisecond, 1<<20)
 	m1, _ := s.Save("room1", "old", "", bytes.NewReader([]byte("x")))

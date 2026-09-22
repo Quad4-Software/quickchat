@@ -20,31 +20,31 @@ func openTmp(t *testing.T) *Store {
 func TestRoomLifecycle(t *testing.T) {
 	st := openTmp(t)
 
-	ok, err := st.HasRoom("nope")
+	ok, err := st.HasRoom(t.Context(), "nope")
 	if err != nil || ok {
 		t.Fatalf("expected missing room, got ok=%v err=%v", ok, err)
 	}
-	if err := st.PutRoom("abc123"); err != nil {
+	if err := st.PutRoom(t.Context(), "abc123"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutRoom("abc123"); err != nil {
+	if err := st.PutRoom(t.Context(), "abc123"); err != nil {
 		t.Fatal("re-put must not error")
 	}
-	ok, err = st.HasRoom("abc123")
+	ok, err = st.HasRoom(t.Context(), "abc123")
 	if err != nil || !ok {
 		t.Fatal("room should exist")
 	}
-	if err := st.DeleteRoom("abc123"); err != nil {
+	if err := st.DeleteRoom(t.Context(), "abc123"); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := st.HasRoom("abc123"); ok {
+	if ok, _ := st.HasRoom(t.Context(), "abc123"); ok {
 		t.Fatal("room should be deleted")
 	}
 }
 
 func TestExpiredRooms(t *testing.T) {
 	st := openTmp(t)
-	if err := st.PutRoom("fresh"); err != nil {
+	if err := st.PutRoom(t.Context(), "fresh"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.db.Exec(
@@ -53,7 +53,7 @@ func TestExpiredRooms(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := st.ExpiredRooms(time.Now().Add(-24 * time.Hour))
+	ids, err := st.ExpiredRooms(t.Context(), time.Now().Add(-24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestExpiredRooms(t *testing.T) {
 
 func TestPing(t *testing.T) {
 	st := openTmp(t)
-	if err := st.Ping(); err != nil {
+	if err := st.Ping(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 }

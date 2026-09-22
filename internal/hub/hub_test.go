@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"go.uber.org/goleak"
 )
 
 type testServer struct {
@@ -163,4 +164,137 @@ func TestAttachmentResolution(t *testing.T) {
 	if e["type"] != "chat" || e["message"].(map[string]any)["body"] != "still alive" {
 		t.Fatal("chat should continue after dropped attachment message")
 	}
+}
+
+func TestNoncePassthrough(t *testing.T) {
+	ts := newTestServer(t)
+	c := ts.dial(t, "room", "alice")
+	readEvent(t, c)
+	send(t, c, map[string]any{"type": "chat", "body": "hi", "nonce": "n42"})
+	e := readEvent(t, c)
+	if e["message"].(map[string]any)["nonce"] != "n42" {
+		t.Fatalf("nonce not echoed: %v", e["message"])
+	}
+}
+
+func TestMalformedFramesIgnored(t *testing.T) {
+	ts := newTestServer(t)
+	c := ts.dial(t, "room", "alice")
+	readEvent(t, c)
+
+	// garbage bytes, wrong types, empty messages: none should kill the conn
+	for _, junk := range []any{
+		"not json at all",
+		map[string]any{"type": "chat", "body": 12345},
+		map[string]any{"type": "bogus"},
+		map[string]any{"type": "chat"},
+		map[string]any{"type": "chat", "body": "   "},
+	} {
+		if s, ok := junk.(string); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := c.Write(ctx, websocket.MessageText, []byte(s))
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			send(t, c, junk)
+		}
+	}
+	send(t, c, map[string]any{"type": "chat", "body": "still here"})
+	e := readEvent(t, c)
+	if e["message"].(map[string]any)["body"] != "still here" {
+		t.Fatal("connection should survive malformed frames")
+	}
+}
+
+func TestOversizeFrameDisconnects(t *testing.T) {
+	ts := newTestServer(t)
+	c := ts.dial(t, "room", "alice")
+	readEvent(t, c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := c.Write(ctx, websocket.MessageText,
+		[]byte(`{"type":"chat","body":"`+strings.Repeat("x", 40<<10)+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.Read(ctx)
+	if err == nil {
+		t.Fatal("oversize frame should close the connection")
+	}
+}
+
+func TestRoomFull(t *testing.T) {
+	ts := newTestServer(t)
+	var conns []*websocket.Conn
+	for i := range maxRoomPeers {
+		conns = append(conns, ts.dial(t, "room", "p"))
+		readEvent(t, conns[i])
+	}
+	url := "ws" + strings.TrimPrefix(ts.srv.URL, "http") + "/room?name=late"
+	c, _, err := websocket.Dial(context.Background(), url, nil)
+	if err != nil {
+		// server may refuse the upgrade outright
+		return
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, _, err = c.Read(ctx)
+	if err == nil {
+		t.Fatal("full room should disconnect the late client")
+	}
+}
+
+func TestNoGoroutineLeak(t *testing.T) {
+	ts := newTestServer(t)
+	c := ts.dial(t, "room", "alice")
+	readEvent(t, c)
+	send(t, c, map[string]any{"type": "chat", "body": "x"})
+	readEvent(t, c)
+	c.Close(websocket.StatusNormalClosure, "")
+	// let the server observe the close and unwind
+	for range 50 {
+		if ts.h.PeerCount("room") == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if ts.h.PeerCount("room") != 0 {
+		t.Fatal("peer was not unregistered")
+	}
+	// close now rather than in cleanup so the accept loop is gone before
+	// the leak check runs
+	ts.srv.Close()
+	goleak.VerifyNone(t)
+}
+
+func FuzzInbound(f *testing.F) {
+	f.Add([]byte(`{"type":"chat","body":"hi"}`))
+	f.Add([]byte(`{"type":"typing","typing":true}`))
+	f.Add([]byte(`{}`))
+	f.Add([]byte(`[1,2,3]`))
+	f.Add([]byte(``))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var in inbound
+		_ = parseInbound(data, &in) // must never panic
+	})
+}
+
+func FuzzPeerID(f *testing.F) {
+	f.Add(uint64(0))
+	f.Add(uint64(1 << 62))
+	f.Fuzz(func(t *testing.T, n uint64) {
+		id := peerID(n)
+		if len(id) != 10 {
+			t.Fatalf("peerID(%d) len %d", n, len(id))
+		}
+		for _, c := range id {
+			if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyz234567", c) {
+				t.Fatalf("peerID(%d) has bad char %q", n, c)
+			}
+		}
+	})
 }

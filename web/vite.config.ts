@@ -1,9 +1,12 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  test: {
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+  },
   build: {
     // keep committed placeholders like dist/.gitkeep so the Go embed
     // directive always resolves, even before the first web build

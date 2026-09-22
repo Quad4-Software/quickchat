@@ -28,13 +28,22 @@ Env only. Defaults shown:
     QUICKCHAT_ROOM_TTL=168h         room expiry (7d)
     QUICKCHAT_ATTACHMENT_TTL=24h    attachment expiry
     QUICKCHAT_MAX_UPLOAD=67108864   upload limit (64 MiB)
+    QUICKCHAT_RATE_CREATE=12        room creates per minute per ip
+    QUICKCHAT_RATE_ACTION=60        uploads and token mints per minute per ip
+    QUICKCHAT_RATE_SOCKET=30        ws connects per minute per ip
     QUICKCHAT_PPROF=                pprof listen address, off when empty
+    QUICKCHAT_TRUSTED_PROXY=        trust X-Forwarded-For from the proxy
     LIVEKIT_URL=                    wss:// endpoint for the client
     LIVEKIT_API_KEY=
     LIVEKIT_API_SECRET=
 
 Without the LIVEKIT_* variables the app still runs, voice and video are
 disabled and the room page falls back to chat only.
+
+Room links carry the media encryption key in the URL fragment
+(#e2ee=...). The key never reaches the server, so LiveKit media is
+end-to-end encrypted between room participants. Joining by bare room id
+without the fragment falls back to standard DTLS-SRTP.
 
 ## Deploy
 
@@ -49,8 +58,9 @@ disabled and the room page falls back to chat only.
 
     make dev          # backend on :8080
     pnpm -C web dev   # vite dev server, proxies /api and /ws
-    make test         # go tests + vitest
-    make check        # gofmt, vet, eslint, prettier, tsc
+    make test         # go tests incl. race + vitest
+    make test-e2e     # playwright + axe against the real binary
+    make check        # gofmt, vet, golangci-lint, eslint, prettier, tsc
     pnpm -C web lhci  # lighthouse, gates at 100
 
 License: 0BSD.

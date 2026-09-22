@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,8 @@ const (
 	maxMessageBytes = 32 << 10
 	sendBuffer      = 64
 	writeTimeout    = 10 * time.Second
+	maxRoomPeers    = 64
+	maxNonceBytes   = 32
 )
 
 type Peer struct {
@@ -34,6 +37,7 @@ type Message struct {
 	Peer       Peer        `json:"peer"`
 	Body       string      `json:"body,omitempty"`
 	Attachment *Attachment `json:"attachment,omitempty"`
+	Nonce      string      `json:"nonce,omitempty"`
 	Ts         int64       `json:"ts"`
 }
 
@@ -43,6 +47,7 @@ type inbound struct {
 	Type       string `json:"type"`
 	Body       string `json:"body"`
 	Attachment string `json:"attachment"`
+	Nonce      string `json:"nonce"`
 	Typing     bool   `json:"typing"`
 }
 
@@ -97,6 +102,11 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, roomID, name strin
 	}
 
 	h.mu.Lock()
+	if len(h.rooms[roomID]) >= maxRoomPeers {
+		h.mu.Unlock()
+		_ = conn.Close(websocket.StatusPolicyViolation, "room full")
+		return
+	}
 	h.ids++
 	c := &Client{
 		Peer: Peer{ID: peerID(h.ids), Name: name},
@@ -160,7 +170,7 @@ func (c *Client) readLoop() {
 			return
 		}
 		var in inbound
-		if json.Unmarshal(data, &in) != nil {
+		if !parseInbound(data, &in) {
 			continue
 		}
 		switch in.Type {
@@ -173,6 +183,11 @@ func (c *Client) readLoop() {
 	}
 }
 
+// parseInbound decodes a client frame. Separated for fuzzing.
+func parseInbound(data []byte, in *inbound) bool {
+	return json.Unmarshal(data, in) == nil
+}
+
 func (h *Hub) chat(c *Client, in inbound) {
 	msg := Message{Peer: c.Peer, Ts: time.Now().UnixMilli()}
 	if in.Attachment != "" && h.lookupAttach != nil {
@@ -181,17 +196,20 @@ func (h *Hub) chat(c *Client, in inbound) {
 			return
 		}
 	}
-	msg.Body = truncate(in.Body, 4096)
+	msg.Body = truncate(strings.TrimSpace(in.Body), 4096)
+	msg.Nonce = truncate(in.Nonce, maxNonceBytes)
 	if msg.Body == "" && msg.Attachment == nil {
 		return
 	}
-	msg.ID = msgID(c.room, msg.Ts)
+	msg.ID = msgID(c.room, c.ID, msg.Ts)
 	h.broadcast(c.room, nil, envelope{"type": "chat", "message": msg})
 }
 
-func msgID(room string, ts int64) string {
+// msgID must stay unique per sender per millisecond; the client dedups
+// on it when the optimistic echo arrives.
+func msgID(room, peer string, ts int64) string {
 	// #nosec G115 -- unix milliseconds are always positive
-	return room + "-" + peerID(uint64(ts))
+	return room + "-" + peerID(uint64(ts)) + "-" + peer
 }
 
 func truncate(s string, n int) string {
@@ -216,7 +234,7 @@ func (h *Hub) broadcast(room string, except *Client, ev envelope) {
 		case c.send <- data:
 		default:
 			// slow consumer: drop the client rather than block the room
-			go c.conn.Close(websocket.StatusPolicyViolation, "slow consumer")
+			go func() { _ = c.conn.Close(websocket.StatusPolicyViolation, "slow consumer") }()
 		}
 	}
 }

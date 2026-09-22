@@ -12,11 +12,16 @@ dev:
 
 test:
 	go test ./...
+	go test -race ./...
 	pnpm -C web test
+
+test-e2e:
+	pnpm -C web test:e2e
 
 check:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
+	golangci-lint run
 	pnpm -C web lint
 	pnpm -C web format:check
 	pnpm -C web typecheck
@@ -40,4 +45,4 @@ down:
 clean:
 	rm -rf bin web/dist web/.lighthouseci
 
-.PHONY: all build web dev test check lint format docker up down clean
+.PHONY: all build web dev test test-e2e check lint format docker up down clean

@@ -15,6 +15,7 @@ import (
 
 var ErrNotFound = errors.New("attachment not found or expired")
 var ErrTooLarge = errors.New("attachment exceeds size limit")
+var ErrInvalid = errors.New("invalid room or attachment id")
 
 type Meta struct {
 	ID        string    `json:"id"`
@@ -40,7 +41,7 @@ func New(dir string, ttl time.Duration, max int64) (*Store, error) {
 
 func (s *Store) Save(room, name, mime string, r io.Reader) (*Meta, error) {
 	if !validID(room) {
-		return nil, ErrNotFound
+		return nil, ErrInvalid
 	}
 	id := newID()
 	dir := filepath.Join(s.dir, room)
@@ -192,7 +193,7 @@ func sniff(path string) string {
 	if err != nil {
 		return "application/octet-stream"
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var buf [512]byte
 	n, _ := f.Read(buf[:])
 	return http.DetectContentType(buf[:n])

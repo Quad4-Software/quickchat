@@ -43,8 +43,8 @@
   --border-strong: var(--color-paper-300);
   --foreground: var(--color-paper-900);
   --emphasis: var(--color-paper-950);
-  --muted-foreground: var(--color-paper-400);
-  --dim: var(--color-paper-500);
+  --muted-foreground: var(--color-paper-500);
+  --dim: #5e5e65;
   --inverted: var(--color-paper-950);
   --inverted-foreground: var(--color-paper-50);
   --destructive: #dc2626;
@@ -61,8 +61,8 @@
   --border-strong: var(--color-void-600);
   --foreground: var(--color-void-200);
   --emphasis: var(--color-void-100);
-  --muted-foreground: var(--color-void-400);
-  --dim: var(--color-void-500);
+  --muted-foreground: var(--color-void-300);
+  --dim: #8a8a93;
   --inverted: var(--color-void-50);
   --inverted-foreground: var(--color-void-950);
   --destructive: #f87171;
@@ -90,6 +90,12 @@
 
 ::selection {
   background: rgb(0 115 255 / 0.25);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

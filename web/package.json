@@ -4,18 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "license": "0BSD",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@12.5.1+sha512.e3f305bc784a2bc89f5ad3b6138889470fae8d2af5f36b61216ec91c2c3d64089775f9de38aac331044ea40f245cb0d5666392dfdf65824e1907ef6a2c62de5f",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/inline-css.mjs",
+    "build": "node scripts/clean-dist.mjs && vite build && node scripts/inline-css.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:e2e": "pnpm build && playwright test",
     "lhci": "lhci autorun",
     "preview": "vite preview"
   },
@@ -32,8 +33,10 @@
     "wouter": "3.11.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@lhci/cli": "0.15.1",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

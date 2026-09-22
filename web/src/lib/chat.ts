@@ -1,6 +1,7 @@
 import type { ServerEvent } from './types'
 
 const MAX_BACKOFF_MS = 8000
+const MAX_QUEUE = 64
 
 export class ChatSocket {
   private ws: WebSocket | null = null
@@ -9,6 +10,9 @@ export class ChatSocket {
   private attempts = 0
   private closed = false
   private timer: number | null = null
+  // chat frames sent while disconnected are queued and flushed on open so a
+  // reconnect does not silently drop user input
+  private queue: string[] = []
 
   onEvent: (e: ServerEvent) => void = () => {}
   onStateChange: (connected: boolean) => void = () => {}
@@ -35,6 +39,9 @@ export class ChatSocket {
     ws.onopen = () => {
       this.attempts = 0
       this.onStateChange(true)
+      const queued = this.queue
+      this.queue = []
+      for (const data of queued) ws.send(data)
     }
     ws.onclose = () => {
       if (this.ws !== ws) return
@@ -50,24 +57,39 @@ export class ChatSocket {
     this.timer = window.setTimeout(() => this.dial(), delay)
   }
 
-  send(body: string, attachment?: string) {
-    this.emit({ type: 'chat', body, attachment: attachment ?? '' })
+  send(body: string, attachment?: string, nonce?: string) {
+    const data = JSON.stringify({
+      type: 'chat',
+      body,
+      attachment: attachment ?? '',
+      nonce: nonce ?? '',
+    })
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data)
+    } else if (this.queue.length < MAX_QUEUE) {
+      this.queue.push(data)
+    }
   }
 
   setTyping(typing: boolean) {
-    this.emit({ type: 'typing', typing })
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'typing', typing }))
+    }
   }
 
   close() {
     this.closed = true
+    this.queue = []
     if (this.timer !== null) window.clearTimeout(this.timer)
     this.ws?.close()
     this.ws = null
   }
+}
 
-  private emit(v: Record<string, unknown>) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(v))
-    }
-  }
+export function newNonce(): string {
+  const b = new Uint8Array(16)
+  crypto.getRandomValues(b)
+  let s = ''
+  for (const x of b) s += x.toString(16).padStart(2, '0')
+  return s
 }

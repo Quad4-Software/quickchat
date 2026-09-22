@@ -9,14 +9,43 @@ import {
   VideoTrack,
 } from '@livekit/components-react'
 import type { TrackReferenceOrPlaceholder } from '@livekit/components-react'
-import { Track } from 'livekit-client'
-import { Mic, MonitorUp, PhoneOff, Video } from 'lucide-react'
+import { ExternalE2EEKeyProvider, Track } from 'livekit-client'
+import type { RoomOptions } from 'livekit-client'
+import { useEffect, useMemo } from 'react'
+import { Lock, Mic, MonitorUp, PhoneOff, Video } from 'lucide-react'
 import { cn } from '../lib/cn'
 import type { LiveKitGrant } from '../lib/types'
 
 type TrackRef = TrackReferenceOrPlaceholder
 
-export default function Stage({ grant }: { grant: LiveKitGrant }) {
+export default function Stage({
+  grant,
+  e2eeKey,
+}: {
+  grant: LiveKitGrant
+  e2eeKey?: string | null
+}) {
+  // the key arrives via URL fragment and is set once; it never reaches the server
+  const options = useMemo<RoomOptions | undefined>(() => {
+    if (!e2eeKey) return undefined
+    const keyProvider = new ExternalE2EEKeyProvider()
+    void keyProvider.setKey(e2eeKey)
+    return {
+      e2ee: {
+        keyProvider,
+        worker: new Worker(new URL('livekit-client/e2ee-worker', import.meta.url)),
+      },
+    }
+  }, [e2eeKey])
+
+  // terminate the e2ee worker when the stage unmounts
+  useEffect(() => {
+    return () => {
+      const e2ee = options?.e2ee
+      if (e2ee && 'worker' in e2ee) e2ee.worker.terminate()
+    }
+  }, [options])
+
   return (
     <LiveKitRoom
       serverUrl={grant.url}
@@ -24,8 +53,15 @@ export default function Stage({ grant }: { grant: LiveKitGrant }) {
       connect
       audio
       video={false}
+      {...(options ? { options } : {})}
       className="flex h-full flex-col"
     >
+      {e2eeKey && (
+        <p className="flex items-center justify-center gap-1.5 border-b border-border bg-card py-1 font-mono text-[10px] text-muted-foreground">
+          <Lock className="size-3" aria-hidden />
+          end-to-end encrypted media
+        </p>
+      )}
       <StageInner />
       <RoomAudioRenderer />
     </LiveKitRoom>
@@ -127,13 +163,16 @@ function Controls() {
   return (
     <div className="flex items-center justify-center gap-2 border-t border-border px-4 py-3">
       <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
-        <Mic className="size-4" />
+        <Mic className="size-4" aria-hidden />
+        <span className="sr-only">microphone</span>
       </TrackToggle>
       <TrackToggle source={Track.Source.Camera} className={toggleClass}>
-        <Video className="size-4" />
+        <Video className="size-4" aria-hidden />
+        <span className="sr-only">camera</span>
       </TrackToggle>
       <TrackToggle source={Track.Source.ScreenShare} className={toggleClass}>
-        <MonitorUp className="size-4" />
+        <MonitorUp className="size-4" aria-hidden />
+        <span className="sr-only">share screen</span>
       </TrackToggle>
       <DisconnectButton
         className={cn(
@@ -141,7 +180,8 @@ function Controls() {
           'text-sm font-medium text-destructive hover:bg-destructive/10',
         )}
       >
-        <PhoneOff className="size-4" />
+        <PhoneOff className="size-4" aria-hidden />
+        <span className="sr-only">disconnect</span>
       </DisconnectButton>
     </div>
   )

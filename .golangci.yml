@@ -1,0 +1,48 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - unconvert
+    - copyloopvar
+    - gosec
+    - bodyclose
+    - noctx
+    - perfsprint
+  settings:
+    gosec:
+      excludes:
+        # pprof import is opt-in via QUICKCHAT_PPROF and serves on a
+        # separate listener only
+        - G108
+        # fs paths are built from validated lowercase alnum ids
+        - G304
+        - G703
+        # unix millis can not go negative
+        - G115
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - noctx
+          - bodyclose
+          - unparam
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

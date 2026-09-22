@@ -5,4 +5,7 @@ web/dist/*
 !web/dist/.gitkeep
 web/node_modules/
 web/.lighthouseci/
+web/.e2e-data/
+web/test-results/
+web/playwright-report/
 *.tsbuildinfo

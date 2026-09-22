@@ -21,7 +21,7 @@ func newManager(t *testing.T, ttl time.Duration) *Manager {
 
 func TestCreateAndExists(t *testing.T) {
 	m := newManager(t, time.Hour)
-	id, err := m.Create()
+	id, err := m.Create(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,10 +33,10 @@ func TestCreateAndExists(t *testing.T) {
 			t.Fatalf("id %q has invalid char %c", id, c)
 		}
 	}
-	if !m.Exists(id) {
+	if !m.Exists(t.Context(), id) {
 		t.Fatal("created room should exist")
 	}
-	if m.Exists("zzzzzzzzzz") {
+	if m.Exists(t.Context(), "zzzzzzzzzz") {
 		t.Fatal("unknown room should not exist")
 	}
 }
@@ -45,7 +45,7 @@ func TestCreateUnique(t *testing.T) {
 	m := newManager(t, time.Hour)
 	seen := map[string]bool{}
 	for range 100 {
-		id, err := m.Create()
+		id, err := m.Create(t.Context())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -58,16 +58,16 @@ func TestCreateUnique(t *testing.T) {
 
 func TestSweep(t *testing.T) {
 	m := newManager(t, time.Hour)
-	id, _ := m.Create()
-	m.Sweep()
-	if !m.Exists(id) {
+	id, _ := m.Create(t.Context())
+	m.Sweep(t.Context())
+	if !m.Exists(t.Context(), id) {
 		t.Fatal("fresh room should survive sweep")
 	}
 	// ttl of zero expires anything created at or before now
 	old := newManager(t, 0)
-	oldID, _ := old.Create()
-	old.Sweep()
-	if old.Exists(oldID) {
+	oldID, _ := old.Create(t.Context())
+	old.Sweep(t.Context())
+	if old.Exists(t.Context(), oldID) {
 		t.Fatal("expired room should be swept")
 	}
 }

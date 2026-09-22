@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // #nosec G108 -- only reachable on the opt-in pprof listener
@@ -38,7 +39,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer st.Close()
+	defer func() {
+		if cerr := st.Close(); cerr != nil {
+			slog.Warn("store close", "err", cerr)
+		}
+	}()
 
 	atts, err := attach.New(filepath.Join(cfg.DataDir, "attachments"),
 		cfg.AttachmentTTL, cfg.MaxUploadBytes)
@@ -55,16 +60,26 @@ func main() {
 		return &hub.Attachment{ID: m.ID, Name: m.Name, Size: m.Size, Mime: m.Mime}
 	})
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	go func() {
-		for range time.Tick(15 * time.Minute) {
-			rm.Sweep()
-			atts.Sweep()
+		tick := time.NewTicker(15 * time.Minute)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				rm.Sweep(ctx)
+				atts.Sweep()
+			}
 		}
 	}()
 
 	if cfg.PprofAddr != "" {
 		go func() {
-			log.Printf("pprof listening on %s", cfg.PprofAddr)
+			slog.Info("pprof listening", "addr", cfg.PprofAddr)
 			s := &http.Server{
 				Addr:              cfg.PprofAddr,
 				Handler:           http.DefaultServeMux,
@@ -79,16 +94,14 @@ func main() {
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
-		log.Printf("quickchat %s (%s) listening on %s",
-			version.Version, version.Commit, cfg.Addr)
+		slog.Info("listening", "version", version.Version,
+			"commit", version.Commit, "addr", cfg.Addr)
 		if cfg.LiveKitURL == "" {
-			log.Printf("warning: LIVEKIT_URL not set, voice and video disabled")
+			slog.Warn("LIVEKIT_URL not set, voice and video disabled")
 		}
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
@@ -96,7 +109,7 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	log.Print("shutting down")
+	slog.Info("shutting down")
 	h.CloseAll()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -124,7 +137,7 @@ func healthcheck() int {
 	if err != nil {
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return 1
 	}
