@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/clean-dist.mjs && vite build && node scripts/inline-css.mjs",
-    "build:demo": "node scripts/clean-dist.mjs && VITE_DEMO=1 VITE_BASE=/quickchat/ vite build",
+    "build:demo": "node scripts/clean-dist.mjs && VITE_DEMO=1 vite build",
     "shots": "node scripts/screenshot.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

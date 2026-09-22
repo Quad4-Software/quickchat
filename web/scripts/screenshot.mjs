@@ -34,9 +34,7 @@ function serve() {
   return new Promise((ok) => {
     const server = createServer(async (req, res) => {
       try {
-        // the demo bundle is built with base /quickchat/ so strip it
         let p = decodeURIComponent(new URL(req.url, 'http://x').pathname)
-        p = p.replace(/^\/quickchat/, '') || '/'
         let file = join(dist, p)
         if (p === '/' || !existsSync(file) || statSync(file).isDirectory())
           file = join(dist, 'index.html')

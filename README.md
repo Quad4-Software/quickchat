@@ -9,7 +9,8 @@ peer over WebRTC data channels and never touch the server. SQLite keeps
 room ids and timestamps only.
 
 A scripted client-only demo runs at `/demo` (no server needed) and is
-published to GitHub Pages on every web change.
+published to https://quickchat.quad4.io via GitHub Pages on every web
+change.
 
 ## Run
 

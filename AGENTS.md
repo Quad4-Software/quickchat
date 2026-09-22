@@ -112,7 +112,8 @@ Software.
   throttling.
 - The scalar docs chunk is split out as docs-*.js and excluded from the
   service worker precache since it needs the live spec anyway.
-- The demo build (VITE_DEMO=1, VITE_BASE) is the gh pages bundle: hash
+- The demo build (VITE_DEMO=1) is the gh pages bundle for
+  quickchat.quad4.io, served at the domain root so base stays /: hash
   routing, no service worker, a copy of openapi.yaml written into dist
   for /docs, and DemoMesh + DemoStage scripted peers instead of a server.
 - Asset urls that ship in runtime js (css masks, the docs spec url) must
