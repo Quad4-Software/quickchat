@@ -1,0 +1,4 @@
+# golang.org/x/crypto/openpgp is flagged as unmaintained with no fixed
+# version. We never call openpgp; the module is a transitive dep and the
+# advisory tracks the package existing in the binary, not reachable code.
+GO-2026-5932

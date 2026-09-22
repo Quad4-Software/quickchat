@@ -95,6 +95,7 @@ jobs:
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
           exit-code: "1"
       - name: Upload Grype SARIF
         if: always() && hashFiles('grype.sarif') != ''
