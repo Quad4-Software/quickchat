@@ -97,13 +97,13 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
       - name: Upload Grype SARIF
-        if: always()
+        if: always() && hashFiles('grype.sarif') != ''
         uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: grype.sarif
           category: grype
       - name: Upload Trivy SARIF
-        if: always()
+        if: always() && hashFiles('trivy.sarif') != ''
         uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: trivy.sarif

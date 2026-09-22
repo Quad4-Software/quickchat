@@ -9,6 +9,8 @@ minimumReleaseAgeStrict: true
 strictDepBuilds: true
 allowBuilds:
   esbuild: true
+  # vue-demi postinstall only selects the vue 2 or 3 shim for scalar
+  vue-demi: true
 
 # Block unexpected injected transitive dependencies.
 blockExoticSubdeps: true
