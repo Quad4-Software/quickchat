@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Web build: pnpm is pinned by the packageManager field via corepack.
-FROM docker.io/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS web
+FROM docker.io/library/node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS web
 ENV CI=true
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@12.5.1 --activate
