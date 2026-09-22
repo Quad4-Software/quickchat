@@ -107,7 +107,7 @@ jobs:
       - name: build web
         run: pnpm -C web build
       - name: playwright browsers
-        run: pnpm -C web exec playwright install --with-deps chromium
+        run: pnpm -C web exec playwright install --with-deps chromium firefox webkit
       - name: e2e
         run: pnpm -C web test:e2e
 

@@ -38,6 +38,8 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { gridLayout } from '../lib/grid'
+import { useElementSize } from '../lib/useElementSize'
 import { useRegisterStats } from '../lib/stats'
 import type { StatRow, StatSection } from '../lib/stats'
 import type { LiveKitGrant } from '../lib/types'
@@ -145,7 +147,18 @@ function StageInner({
   const [fullscreen, setFullscreen] = useState(false)
   const [mediaError, setMediaError] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
+  const [gridRef, gridSize] = useElementSize<HTMLDivElement>()
   const prevBytes = useRef(new Map<string, { bytes: number; ts: number }>())
+
+  // a screen share promotes the stage to speaker view when it appears,
+  // the same way meet pins a presentation. switching back to grid is
+  // sticky: the share only auto promotes on a fresh transition
+  const hasScreen = tracks.some((t) => t.source === Track.Source.ScreenShare)
+  const prevScreen = useRef(false)
+  useEffect(() => {
+    if (hasScreen && !prevScreen.current) setView('speaker')
+    prevScreen.current = hasScreen
+  }, [hasScreen])
 
   // per participant output volume, 0 to MAX_BOOST, keyed by identity
   const [volumes, setVolumes] = useState<Record<string, number>>(() => {
@@ -377,6 +390,11 @@ function StageInner({
       : undefined
   const rest = featured ? tracks.filter((t) => t !== featured) : tracks
 
+  // the grid computes a column count and tile size that fits every tile
+  // inside the measured stage area. tiles shrink to fit; the stage never
+  // scrolls
+  const grid = gridLayout(tracks.length, gridSize.width, gridSize.height)
+
   return (
     <div ref={rootRef} className="flex min-h-0 flex-1 flex-col bg-background">
       {mediaError && (
@@ -394,9 +412,12 @@ function StageInner({
           </button>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div ref={gridRef} className="min-h-0 flex-1 p-3 sm:p-4">
         {tracks.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <span className="flex size-14 items-center justify-center rounded-full border border-border bg-card">
+              <UserRound className="size-6 text-muted-foreground" aria-hidden />
+            </span>
             <p className="text-sm text-muted-foreground">
               nobody here yet. share the link.
             </p>
@@ -434,7 +455,15 @@ function StageInner({
             )}
           </div>
         ) : (
-          <div className="grid h-fit grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className="grid h-full w-full place-content-center gap-3"
+            style={{
+              gridTemplateColumns:
+                grid.tileW > 0
+                  ? `repeat(${grid.cols}, ${Math.floor(grid.tileW)}px)`
+                  : `repeat(${grid.cols}, minmax(0, 1fr))`,
+            }}
+          >
             {tracks.map((t) => (
               <Tile
                 key={`${t.participant.identity}-${t.source}`}
@@ -512,15 +541,17 @@ function Tile({
     <div
       ref={tileRef}
       className={cn(
-        'group relative aspect-video overflow-hidden rounded-lg border bg-recessed',
-        isScreen && !featured && 'sm:col-span-2',
+        'group relative aspect-video w-full overflow-hidden rounded-lg border bg-recessed transition-colors',
         featured && 'h-full w-full',
-        strip && 'aspect-video w-40 shrink-0',
+        strip && 'w-40 shrink-0',
         speaking ? 'border-success' : 'border-border',
       )}
     >
       {hasVideo ? (
-        <VideoTrack trackRef={track} className="h-full w-full object-cover" />
+        <VideoTrack
+          trackRef={track}
+          className={cn('h-full w-full', isScreen ? 'object-contain' : 'object-cover')}
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
           <span className="flex size-14 items-center justify-center rounded-full border border-border-strong bg-card text-lg font-semibold text-muted-foreground">
@@ -541,7 +572,7 @@ function Tile({
       </div>
       <div
         className={cn(
-          'absolute right-2 top-2 flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+          'absolute right-2 top-2 flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100',
           volOpen ? 'opacity-100' : 'opacity-0',
         )}
       >
@@ -652,6 +683,7 @@ function Controls({
         <MonitorUp className="size-4" aria-hidden />
         <span className="sr-only">share screen</span>
       </TrackToggle>
+      <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
       <button
         onClick={() => onView(view === 'grid' ? 'speaker' : 'grid')}
         aria-label={view === 'grid' ? 'speaker view' : 'grid view'}
@@ -689,6 +721,7 @@ function Controls({
           <Activity className="size-4" aria-hidden />
         </button>
       )}
+      <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
       <DisconnectButton
         className={cn(
           'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',

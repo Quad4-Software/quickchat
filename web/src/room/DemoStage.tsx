@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'wouter'
 import {
   LayoutGrid,
   Maximize,
@@ -14,6 +15,8 @@ import {
   VideoOff,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { gridLayout } from '../lib/grid'
+import { useElementSize } from '../lib/useElementSize'
 
 // demo stage renders seeded participants from generated canvas streams, so
 // tiles are real video elements: picture in picture and fullscreen work
@@ -153,10 +156,9 @@ function Tile({
     <div
       ref={tileRef}
       className={cn(
-        'group relative aspect-video overflow-hidden rounded-lg border bg-recessed',
-        tile.kind === 'screen' && !featured && 'sm:col-span-2',
+        'group relative aspect-video w-full overflow-hidden rounded-lg border bg-recessed transition-colors',
         featured && 'h-full w-full',
-        strip && 'aspect-video w-40 shrink-0',
+        strip && 'w-40 shrink-0',
         speaking ? 'border-success' : 'border-border',
       )}
     >
@@ -167,7 +169,15 @@ function Tile({
           </span>
         </div>
       ) : (
-        <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          className={cn(
+            'h-full w-full',
+            tile.kind === 'screen' ? 'object-contain' : 'object-cover',
+          )}
+        />
       )}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-background/80 px-2 py-0.5 backdrop-blur-sm">
         <span className="max-w-32 truncate text-xs font-medium text-foreground">
@@ -182,7 +192,7 @@ function Tile({
         )}
         {tile.kind === 'screen' && <MonitorUp className="size-3 text-muted-foreground" />}
       </div>
-      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
         {!camOff && tile.kind !== 'voice' && document.pictureInPictureEnabled && (
           <button
             aria-label="picture in picture"
@@ -227,6 +237,7 @@ export default function DemoStage() {
   const [fullscreen, setFullscreen] = useState(false)
   const [speaking, setSpeaking] = useState('nova')
   const rootRef = useRef<HTMLDivElement>(null)
+  const [gridRef, gridSize] = useElementSize<HTMLDivElement>()
 
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement))
@@ -252,13 +263,24 @@ export default function DemoStage() {
       : []),
   ]
 
+  // a screen share promotes the stage to speaker view on arrival, like
+  // the real stage. switching back to grid stays sticky
+  const hasScreen = sharing
+  const prevScreen = useRef(hasScreen)
+  useEffect(() => {
+    if (hasScreen && !prevScreen.current) setView('speaker')
+    prevScreen.current = hasScreen
+  }, [hasScreen])
+
   const featured =
     view === 'speaker' ? (tiles.find((t) => t.kind === 'screen') ?? tiles[0]) : undefined
   const rest = featured ? tiles.filter((t) => t !== featured) : tiles
 
+  const grid = gridLayout(tiles.length, gridSize.width, gridSize.height)
+
   return (
     <div ref={rootRef} className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div ref={gridRef} className="min-h-0 flex-1 p-3 sm:p-4">
         {featured ? (
           <div className="flex h-full flex-col gap-3">
             <div className="min-h-0 flex-1">
@@ -284,7 +306,15 @@ export default function DemoStage() {
             )}
           </div>
         ) : (
-          <div className="grid h-fit grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className="grid h-full w-full place-content-center gap-3"
+            style={{
+              gridTemplateColumns:
+                grid.tileW > 0
+                  ? `repeat(${grid.cols}, ${Math.floor(grid.tileW)}px)`
+                  : `repeat(${grid.cols}, minmax(0, 1fr))`,
+            }}
+          >
             {tiles.map((t) => (
               <Tile
                 key={t.id}
@@ -328,6 +358,7 @@ export default function DemoStage() {
         >
           <MonitorUp className="size-4" />
         </button>
+        <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
         <button
           onClick={() => setView(view === 'grid' ? 'speaker' : 'grid')}
           aria-label={view === 'grid' ? 'speaker view' : 'grid view'}
@@ -353,9 +384,15 @@ export default function DemoStage() {
         >
           {fullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
         </button>
-        <span className={cn(toggleClass, 'text-destructive hover:bg-destructive/10')}>
+        <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
+        <Link
+          href="/"
+          aria-label="leave demo"
+          title="leave demo"
+          className={cn(toggleClass, 'text-destructive hover:bg-destructive/10')}
+        >
           <PhoneOff className="size-4" />
-        </span>
+        </Link>
       </div>
     </div>
   )

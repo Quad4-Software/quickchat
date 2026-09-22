@@ -248,9 +248,23 @@ export default function RoomPage({ id }: { id: string }) {
               role="separator"
               aria-orientation="vertical"
               aria-label="resize chat panel"
+              aria-valuenow={chatW}
+              aria-valuemin={240}
+              aria-valuemax={720}
               title="drag to resize"
+              tabIndex={0}
               onPointerDown={resizeChat}
-              className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover active:bg-hover md:block"
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+                e.preventDefault()
+                const delta = e.key === 'ArrowLeft' ? 16 : -16
+                setChatW((w) => {
+                  const next = Math.min(720, Math.max(240, w + delta))
+                  localStorage.setItem('qc-chat-w', String(next))
+                  return next
+                })
+              }}
+              className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover focus-visible:bg-hover active:bg-hover md:block"
             />
             {info && (
               <ChatPane

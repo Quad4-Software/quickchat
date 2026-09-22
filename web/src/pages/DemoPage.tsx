@@ -26,8 +26,10 @@ export default function DemoPage() {
     }
   }, [])
 
-  function resizeChat(e: React.PointerEvent) {
+  function resizeChat(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault()
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
     const startX = e.clientX
     const startW = asideRef.current?.getBoundingClientRect().width ?? chatW
     let latest = startW
@@ -35,12 +37,15 @@ export default function DemoPage() {
       latest = Math.min(720, Math.max(240, startW + (startX - ev.clientX)))
       setChatW(latest)
     }
-    const up = () => {
-      window.removeEventListener('pointermove', move)
+    const end = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', end)
+      el.removeEventListener('pointercancel', end)
       localStorage.setItem('qc-chat-w', String(latest))
     }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up, { once: true })
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', end)
+    el.addEventListener('pointercancel', end)
   }
 
   return (
@@ -75,9 +80,23 @@ export default function DemoPage() {
             role="separator"
             aria-orientation="vertical"
             aria-label="resize chat panel"
+            aria-valuenow={chatW}
+            aria-valuemin={240}
+            aria-valuemax={720}
             title="drag to resize"
+            tabIndex={0}
             onPointerDown={resizeChat}
-            className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover active:bg-hover md:block"
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+              e.preventDefault()
+              const delta = e.key === 'ArrowLeft' ? 16 : -16
+              setChatW((w) => {
+                const next = Math.min(720, Math.max(240, w + delta))
+                localStorage.setItem('qc-chat-w', String(next))
+                return next
+              })
+            }}
+            className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover focus-visible:bg-hover active:bg-hover md:block"
           />
           <ChatPane
             room="demo"
