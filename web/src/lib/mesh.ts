@@ -86,10 +86,21 @@ export interface MeshOptions {
   handlers: MeshHandlers
 }
 
+// ChatSession is the transport surface ChatPane needs. Mesh implements
+// it over real WebRTC channels; DemoMesh implements it with scripted
+// peers so the app can run with no server at all.
+export interface ChatSession {
+  connect(): void
+  close(): void
+  broadcastChat(body: string, file?: FileMeta): string
+  broadcastTyping(on: boolean): void
+  sendFile(file: Blob, meta: FileMeta, msgId: string): void
+}
+
 // Mesh maintains a full WebRTC datachannel mesh between room peers. The
 // signaling socket only carries presence and sdp or ice payloads. Chat
 // and file bytes never touch the server.
-export class Mesh {
+export class Mesh implements ChatSession {
   private signal = new SignalingSocket()
   private self: Peer | null = null
   private conns = new Map<string, PeerConn>()

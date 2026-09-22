@@ -25,7 +25,7 @@ services:
       - QUICKCHAT_ICE_SERVERS=${QUICKCHAT_ICE_SERVERS:-}
       - QUICKCHAT_PPROF=${QUICKCHAT_PPROF:-}
       - QUICKCHAT_TRUSTED_PROXY=true
-      - LIVEKIT_URL=${LIVEKIT_URL:?}
+      - LIVEKIT_URL=wss://lk.${QUICKCHAT_DOMAIN:?}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?}
       - TZ=${TZ:-UTC}
@@ -60,6 +60,54 @@ services:
         limits:
           cpus: "1.0"
           memory: 256M
+    logging: *default-logging
+
+  # bundled livekit server so the stack is all in one. signaling is
+  # proxied at lk.<domain> by traefik; media rides dedicated ports.
+  # on a vps, open 7881/tcp and 7882/udp in the firewall.
+  livekit:
+    image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    restart: unless-stopped
+    user: "65532:65532"
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
+      # advertise the public ip via stun by default. To pin it, set
+      # LIVEKIT_USE_EXTERNAL_IP=false and LIVEKIT_NODE_IP=<ip>.
+      NODE_IP: "${LIVEKIT_NODE_IP:-}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+      TZ: ${TZ:-UTC}
+      HOME: /tmp
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "7880"
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=quickchat-web
+      - traefik.http.routers.livekit.rule=Host(`lk.${QUICKCHAT_DOMAIN:?}`)
+      - traefik.http.routers.livekit.entrypoints=websecure
+      - traefik.http.routers.livekit.tls.certresolver=le
+      - traefik.http.services.livekit.loadbalancer.server.port=7880
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
     logging: *default-logging
 
   traefik:

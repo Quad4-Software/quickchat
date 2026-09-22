@@ -10,9 +10,15 @@
 # have a registry credential configured for it.
 #
 # Required environment variables in Coolify:
-#   LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+#   LIVEKIT_URL (wss://<the livekit service domain below>),
+#   LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 # Optional: QUICKCHAT_ROOM_TTL, QUICKCHAT_MAX_FILE,
-#   QUICKCHAT_ICE_SERVERS (comma separated stun or turn urls), TZ
+#   QUICKCHAT_ICE_SERVERS (comma separated stun or turn urls),
+#   LIVEKIT_NODE_IP (pin the advertised media ip), TZ
+#
+# LiveKit is bundled. Give the livekit service its own domain in the
+# Coolify UI (port 7880), then set LIVEKIT_URL to it. Open 7881/tcp and
+# 7882/udp on the host firewall for WebRTC media.
 name: quickchat
 
 x-logging: &default-logging
@@ -59,6 +65,41 @@ services:
         limits:
           cpus: "1.0"
           memory: 256M
+    logging: *default-logging
+
+  livekit:
+    image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    user: "65532:65532"
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
+      LIVEKIT_USE_EXTERNAL_IP: "${LIVEKIT_USE_EXTERNAL_IP:-true}"
+      NODE_IP: "${LIVEKIT_NODE_IP:-}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+      SERVICE_FQDN_LIVEKIT_7880:
+      TZ: ${TZ:-UTC}
+      HOME: /tmp
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+    expose:
+      - "7880"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
     logging: *default-logging
 
 volumes:

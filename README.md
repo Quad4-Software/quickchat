@@ -1,14 +1,32 @@
 # quickchat
 
+![quickchat room](showcase/room.png)
+
 Ephemeral chat rooms with LiveKit voice and video. One Go binary serves
 the React web client, a websocket for presence and WebRTC signaling, and
 mints LiveKit access tokens. Chat messages and file transfers go peer to
 peer over WebRTC data channels and never touch the server. SQLite keeps
 room ids and timestamps only.
 
+A scripted client-only demo runs at `/demo` (no server needed) and is
+published to GitHub Pages on every web change.
+
 ## Run
 
-    docker compose up -d          # traefik + app, needs .env (see below)
+    docker compose up -d          # traefik + app + livekit, needs .env
+
+`.env`:
+
+    QUICKCHAT_DOMAIN=chat.example.com   # app at https://chat.example.com
+                                        # livekit at wss://lk.chat.example.com
+    ACME_EMAIL=you@example.com
+    LIVEKIT_API_KEY=devkey
+    LIVEKIT_API_SECRET=at-least-32-characters-long-secret
+
+Open these ports on the host firewall for LiveKit media: 7881/tcp,
+7882/udp (plus 80/443 for the proxy). On a LAN or overlay network where
+the host ip is reachable directly, set `LIVEKIT_USE_EXTERNAL_IP=false`
+and `LIVEKIT_NODE_IP=<host ip>`.
 
 or from source:
 
@@ -66,10 +84,13 @@ The p2p mesh negotiates ICE between browsers:
 
 ## Deploy
 
-- `docker-compose.yml`: app plus Traefik with ACME. Set `QUICKCHAT_DOMAIN`
-  and `ACME_EMAIL` in `.env` alongside the LiveKit variables.
-- `docker-compose.coolify.yml`: single service for Coolify's docker
-  compose build pack. Set the Domains field to `https://host:8080`.
+- `docker-compose.yml`: all in one stack. Traefik terminates TLS for
+  the app and for LiveKit signaling on `lk.<domain>`; media uses
+  7881/tcp and 7882/udp directly.
+- `docker-compose.coolify.yml`: same two services for Coolify's docker
+  compose build pack. Assign a domain to quickchat (port 8080) and one
+  to livekit (port 7880), then set `LIVEKIT_URL` to the livekit domain.
+  Publish 7881/tcp and 7882/udp for media.
 - Published images land at `ghcr.io/quad4-software/quickchat`, signed
   keyless with cosign and attested with SBOM and provenance.
 

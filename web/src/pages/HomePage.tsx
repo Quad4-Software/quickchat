@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLocation } from 'wouter'
+import { Link, useLocation } from 'wouter'
 import { ArrowRight, Plus } from 'lucide-react'
 import Mark from '../components/Mark'
 import Starfield from '../components/Starfield'
@@ -78,7 +78,15 @@ export default function HomePage() {
           </div>
         </div>
 
-        <p className="pt-6 text-center font-mono text-xs text-dim">{SITE.footer}</p>
+        <p className="pt-4 text-center">
+          <Link
+            href="/demo"
+            className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            try the demo
+          </Link>
+        </p>
+        <p className="pt-4 text-center font-mono text-xs text-dim">{SITE.footer}</p>
       </div>
     </main>
   )

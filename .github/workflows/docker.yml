@@ -3,7 +3,7 @@ name: docker
 on:
   push:
     branches: [master]
-    tags: ["v*.*.*"]
+    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:
@@ -153,12 +153,11 @@ jobs:
             --type spdxjson \
             --predicate sbom.spdx.json \
             "${IMAGE}@${DIGEST}"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
       - name: Install vexctl
-        run: go install github.com/openvex/vexctl@v0.4.4
+        run: |
+          curl -sSfLo vexctl https://github.com/openvex/vexctl/releases/download/v0.4.4/vexctl-linux-amd64
+          echo "d315e2778af88b999ad4bba30a08aa2677ed701638e16c341b6d57b43c1e064d  vexctl" | sha256sum -c -
+          chmod +x vexctl && sudo mv vexctl /usr/local/bin/
       - name: OpenVEX attestation
         env:
           VEX_PRODUCT: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}

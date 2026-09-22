@@ -1,0 +1,171 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  args:
+    name: args
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ldflags.outputs.version }}
+      commit: ${{ steps.ldflags.outputs.commit }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Refuse release outside canonical repo
+        if: github.repository != 'Quad4-Software/quickchat'
+        run: exit 1
+      - name: Resolve version and commit
+        id: ldflags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  # Built in-job so the vite bundle gets embedded via go:embed. The
+  # isolated go builder cannot run pnpm, so provenance comes from the
+  # slsa generic generator instead, which attests the artifact digests.
+  build:
+    name: build binaries
+    needs: args
+    runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hashes.outputs.hashes }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: install and build web
+        run: |
+          pnpm -C web install --frozen-lockfile
+          pnpm -C web build
+      - name: Build release binaries
+        env:
+          VERSION: ${{ needs.args.outputs.version }}
+          COMMIT: ${{ needs.args.outputs.commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          LDFLAGS="-s -w -X github.com/Quad4-Software/quickchat/internal/version.Version=${VERSION} -X github.com/Quad4-Software/quickchat/internal/version.Commit=${COMMIT}"
+          for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
+            os="${target%-*}"
+            arch="${target#*-}"
+            out="dist/quickchat-${os}-${arch}"
+            [ "$os" = windows ] && out="${out}.exe"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -tags=netgo -ldflags "$LDFLAGS" -o "$out" ./cmd/quickchat
+          done
+          ls -la dist
+      - name: Compute subjects
+        id: hashes
+        working-directory: dist
+        run: echo "hashes=$(sha256sum quickchat-* | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - name: Upload binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quickchat-binaries
+          path: dist/
+
+  # SHA pinned callers cannot fetch the prebuilt generator
+  # (slsa-framework/slsa-github-generator issue 4503), so
+  # compile-generator builds it from source at the pinned ref.
+  provenance:
+    name: slsa provenance
+    needs: [args, build]
+    permissions:
+      actions: read # read the workflow run for artifact upload
+      id-token: write # sign the SLSA provenance
+      contents: write # upload assets to the release when requested
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      base64-subjects: ${{ needs.build.outputs.hashes }}
+      upload-assets: false
+      compile-generator: true
+      provenance-name: quickchat.intoto.jsonl
+
+  release:
+    name: release
+    needs: [args, build, provenance]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # keyless signing and attestation
+      attestations: write # publish build provenance attestations
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Download binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: quickchat-binaries
+          path: dist
+      - name: Download provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: "*.intoto.jsonl"
+          path: dist
+          merge-multiple: true
+      - name: Compute checksums
+        working-directory: dist
+        run: |
+          for f in quickchat-*; do
+            case "$f" in
+              *.intoto.jsonl) ;;
+              *) sha256sum "$f" ;;
+            esac
+          done > checksums.txt
+          cat checksums.txt
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign checksums
+        working-directory: dist
+        run: cosign sign-blob --yes --bundle checksums.txt.sigstore.json checksums.txt
+      - name: Attest artifacts
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/quickchat-*
+            dist/checksums.txt
+            dist/checksums.txt.sigstore.json
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes \
+            --latest \
+            dist/quickchat-* \
+            dist/*.intoto.jsonl \
+            dist/checksums.txt \
+            dist/checksums.txt.sigstore.json

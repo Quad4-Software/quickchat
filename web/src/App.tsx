@@ -1,22 +1,52 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Route, Switch } from 'wouter'
+import { Router, Route, Switch } from 'wouter'
+import { useBrowserLocation } from 'wouter/use-browser-location'
+import { useHashLocation } from 'wouter/use-hash-location'
 import { RefreshCw } from 'lucide-react'
 import HomePage from './pages/HomePage'
-import RoomPage from './pages/RoomPage'
 import Mark from './components/Mark'
 import { initPwa } from './lib/pwa'
 
 const DocsPage = lazy(() => import('./pages/DocsPage'))
+const DemoPage = lazy(() => import('./pages/DemoPage'))
+const RoomPage = lazy(() => import('./pages/RoomPage'))
+
+// the demo bundle runs fully client side on static hosting: hash routing
+// needs no server fallback and the demo room replaces the landing page
+const DEMO = import.meta.env.VITE_DEMO === '1'
+
+function NotFound() {
+  return (
+    <main id="main" className="flex h-full flex-col items-center justify-center gap-4">
+      <Mark size={40} className="text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">page not found</p>
+      <a
+        href="/"
+        className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-hover"
+      >
+        home
+      </a>
+    </main>
+  )
+}
+
+function lazyFallback() {
+  return (
+    <main id="main" className="flex h-full items-center justify-center">
+      <p className="text-sm text-muted-foreground">loading...</p>
+    </main>
+  )
+}
 
 export default function App() {
   const [reload, setReload] = useState<(() => void) | null>(null)
 
   useEffect(() => {
-    initPwa((r) => setReload(() => r))
+    if (!DEMO) initPwa((r) => setReload(() => r))
   }, [])
 
   return (
-    <>
+    <Router hook={DEMO ? useHashLocation : useBrowserLocation}>
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-card focus:px-3 focus:py-1.5 focus:text-sm focus:text-foreground"
@@ -24,33 +54,38 @@ export default function App() {
         skip to content
       </a>
       <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/r/:id">{(params) => <RoomPage id={params.id} />}</Route>
-        <Route path="/docs">
-          <Suspense
-            fallback={
-              <main id="main" className="flex h-full items-center justify-center">
-                <p className="text-sm text-muted-foreground">loading docs...</p>
-              </main>
-            }
-          >
-            <DocsPage />
+        <Route path="/">
+          {DEMO ? (
+            <Suspense fallback={lazyFallback()}>
+              <DemoPage />
+            </Suspense>
+          ) : (
+            <HomePage />
+          )}
+        </Route>
+        {!DEMO && (
+          <Route path="/r/:id">
+            {(params) => (
+              <Suspense fallback={lazyFallback()}>
+                <RoomPage id={params.id} />
+              </Suspense>
+            )}
+          </Route>
+        )}
+        <Route path="/demo">
+          <Suspense fallback={lazyFallback()}>
+            <DemoPage />
           </Suspense>
         </Route>
+        {!DEMO && (
+          <Route path="/docs">
+            <Suspense fallback={lazyFallback()}>
+              <DocsPage />
+            </Suspense>
+          </Route>
+        )}
         <Route>
-          <main
-            id="main"
-            className="flex h-full flex-col items-center justify-center gap-4"
-          >
-            <Mark size={40} className="text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">page not found</p>
-            <a
-              href="/"
-              className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-hover"
-            >
-              home
-            </a>
-          </main>
+          <NotFound />
         </Route>
       </Switch>
       {reload && (
@@ -62,6 +97,6 @@ export default function App() {
           update available
         </button>
       )}
-    </>
+    </Router>
   )
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, Paperclip, SendHorizonal, Users } from 'lucide-react'
 import { Mesh, newNonce } from '../lib/mesh'
+import type { ChatSession, MeshOptions } from '../lib/mesh'
 import { activityBegin, activityEnd } from '../lib/activity'
 import { SITE } from '../lib/site'
 import { fileSize } from '../lib/format'
@@ -27,11 +28,14 @@ export default function ChatPane({
   name,
   iceServers,
   maxFileSize,
+  createSession,
 }: {
   room: string
   name: string
   iceServers: string[]
   maxFileSize: number
+  // defaults to the real webrtc mesh; demo mode injects a scripted one
+  createSession?: (opts: MeshOptions) => ChatSession
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
@@ -42,7 +46,7 @@ export default function ChatPane({
   const [dragging, setDragging] = useState(false)
   const [body, setBody] = useState('')
 
-  const meshRef = useRef<Mesh | null>(null)
+  const meshRef = useRef<ChatSession | null>(null)
   const selfRef = useRef<Peer>({ id: 'me', name })
   const listRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -116,7 +120,7 @@ export default function ChatPane({
   }
 
   useEffect(() => {
-    const mesh = new Mesh({
+    const mesh = (createSession ?? ((o: MeshOptions) => new Mesh(o)))({
       room,
       name,
       iceServers,
