@@ -2,6 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
 import { Activity, Check, Copy, Dices, DoorOpen, Lock } from 'lucide-react'
 import Mark from '../components/Mark'
+import ErrorBoundary from '../components/ErrorBoundary'
+import ErrorView from '../components/ErrorView'
 import ChatPane from '../room/ChatPane'
 import DebugPanel from '../room/DebugPanel'
 import StatsProvider from '../lib/StatsProvider'
@@ -17,7 +19,8 @@ const Stage = lazy(() => import('../room/Stage'))
 export default function RoomPage({ id }: { id: string }) {
   const [info, setInfo] = useState<RoomInfo | null>(null)
   const [error, setError] = useState('')
-  const [name, setName] = useState('')
+  // the last used name survives a crash reload so rejoining is one click
+  const [name, setName] = useState(() => localStorage.getItem('qc-name') ?? '')
   const [joined, setJoined] = useState(false)
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
   const [copied, setCopied] = useState(false)
@@ -80,6 +83,7 @@ export default function RoomPage({ id }: { id: string }) {
     e.preventDefault()
     const n = name.trim()
     if (!n) return
+    localStorage.setItem('qc-name', n)
     if (info?.livekit) {
       try {
         setGrant(await livekitToken(id, n))
@@ -100,16 +104,14 @@ export default function RoomPage({ id }: { id: string }) {
 
   if (error) {
     return (
-      <main id="main" className="flex h-full flex-col items-center justify-center gap-4">
-        <Mark size={40} className="text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">{error}</p>
+      <ErrorView code="404" title={error}>
         <Link
           href="/"
           className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-hover"
         >
           home
         </Link>
-      </main>
+      </ErrorView>
     )
   }
 
@@ -212,22 +214,26 @@ export default function RoomPage({ id }: { id: string }) {
         <div className="relative flex min-h-0 flex-1 flex-col md:flex-row">
           <main id="main" className="min-h-0 min-w-0 flex-1">
             {grant ? (
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center p-6">
-                    <p className="text-sm text-muted-foreground">
-                      connecting to voice...
-                    </p>
-                  </div>
-                }
-              >
-                <Stage
-                  grant={grant}
-                  e2eeKey={e2eeKey}
-                  onDebug={() => setDebug(!debug)}
-                  debugOpen={debug}
-                />
-              </Suspense>
+              // a media crash must not take down chat: the panel boundary
+              // confines it and retry remounts the livekit room
+              <ErrorBoundary variant="panel" label="voice and video">
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center p-6">
+                      <p className="text-sm text-muted-foreground">
+                        connecting to voice...
+                      </p>
+                    </div>
+                  }
+                >
+                  <Stage
+                    grant={grant}
+                    e2eeKey={e2eeKey}
+                    onDebug={() => setDebug(!debug)}
+                    debugOpen={debug}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <div className="flex h-full items-center justify-center p-6">
                 <p className="text-sm text-muted-foreground">
@@ -267,12 +273,14 @@ export default function RoomPage({ id }: { id: string }) {
               className="absolute -left-1.5 bottom-0 top-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-hover focus-visible:bg-hover active:bg-hover md:block"
             />
             {info && (
-              <ChatPane
-                room={id}
-                name={name.trim() || 'anon'}
-                iceServers={info.iceServers ?? []}
-                maxFileSize={info.maxFileSize}
-              />
+              <ErrorBoundary variant="panel" label="chat">
+                <ChatPane
+                  room={id}
+                  name={name.trim() || 'anon'}
+                  iceServers={info.iceServers ?? []}
+                  maxFileSize={info.maxFileSize}
+                />
+              </ErrorBoundary>
             )}
           </aside>
           {debug && <DebugPanel onClose={closeDebug} />}

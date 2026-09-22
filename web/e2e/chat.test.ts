@@ -160,6 +160,28 @@ test('room not found shows error state', async ({ page }) => {
   await expect(page.getByText('room not found')).toBeVisible()
 })
 
+test('unknown route renders the 404 page', async ({ page }) => {
+  await page.goto('/no-such-page')
+  await expect(page.getByText('404')).toBeVisible()
+  await expect(page.getByText('page not found')).toBeVisible()
+  await page.getByRole('link', { name: 'home' }).click()
+  await expect(page.getByRole('button', { name: 'new room' })).toBeVisible()
+})
+
+test('a render crash shows the boundary and navigation recovers', async ({ page }) => {
+  await page.goto('/crash')
+  await expect(page.getByText('something broke')).toBeVisible()
+  await expect(page.getByText('crash probe')).toBeVisible()
+  // navigating away resets the boundary without a reload
+  await page.getByRole('link', { name: 'home' }).click()
+  await expect(page.getByRole('button', { name: 'new room' })).toBeVisible()
+  // the boundary also resets on a fresh visit after a crash
+  await page.goto('/crash')
+  await expect(page.getByText('something broke')).toBeVisible()
+  await page.getByRole('button', { name: 'try again' }).click()
+  await expect(page.getByText('something broke')).toBeVisible()
+})
+
 test('room page passes axe after joining', async ({ page }) => {
   const roomUrl = await createRoom(page)
   await join(page, roomUrl, 'alice')

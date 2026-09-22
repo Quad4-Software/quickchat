@@ -67,6 +67,8 @@ Software.
     web/src/lib/StatsProvider.tsx  stats registry provider component
     web/src/lib/pwa.ts      service worker registration + update flow
     web/src/lib/e2ee.ts  url-fragment media keys + e2ee support check
+    web/src/lib/recovery.ts   stale-chunk detection + guarded one-shot reload
+    web/src/components/     Mark, ErrorBoundary (page/panel), ErrorView
     web/e2e/             playwright + axe specs against the real binary,
                          live.test.ts needs LIVEKIT_* env to run
 
@@ -129,3 +131,8 @@ Software.
   (boost above 100 percent) and persists in localStorage qc-volumes.
 - DebugPanel polls registered stats collectors every 2s while open; do
   not run getStats or other polling when the panel is closed.
+- Error surfaces render through ErrorView (404, dead room, crash page).
+  ErrorBoundary wraps routes (resets on navigation) and the Stage and
+  ChatPane panels so one region crashing never takes down the room.
+  /crash is an unlinked probe route for testing the boundary. Stale
+  chunk errors trigger a guarded one-shot reload via lib/recovery.ts.

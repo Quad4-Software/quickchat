@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Router, Route, Switch } from 'wouter'
+import { Link, Router, Route, Switch, useLocation } from 'wouter'
 import { useBrowserLocation } from 'wouter/use-browser-location'
 import { useHashLocation } from 'wouter/use-hash-location'
 import { RefreshCw } from 'lucide-react'
 import HomePage from './pages/HomePage'
 import RoomPage from './pages/RoomPage'
-import Mark from './components/Mark'
+import ErrorBoundary from './components/ErrorBoundary'
+import ErrorView from './components/ErrorView'
 import { initPwa } from './lib/pwa'
 
 const DocsPage = lazy(() => import('./pages/DocsPage'))
@@ -17,16 +18,56 @@ const DEMO = import.meta.env.VITE_DEMO === '1'
 
 function NotFound() {
   return (
-    <main id="main" className="flex h-full flex-col items-center justify-center gap-4">
-      <Mark size={40} className="text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">page not found</p>
-      <a
+    <ErrorView code="404" title="page not found">
+      <Link
         href="/"
         className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-hover"
       >
         home
-      </a>
-    </main>
+      </Link>
+    </ErrorView>
+  )
+}
+
+// unlinked crash probe: lets e2e and humans verify the error boundary
+// and its recovery path in a real build
+function CrashProbe(): never {
+  throw new Error('crash probe')
+}
+
+// boundary sits inside the router so location changes reset a crashed
+// route without losing the app shell
+function Routes() {
+  const [location] = useLocation()
+  return (
+    <ErrorBoundary resetKey={location}>
+      <Switch>
+        <Route path="/">
+          {DEMO ? (
+            <Suspense fallback={lazyFallback()}>
+              <DemoPage />
+            </Suspense>
+          ) : (
+            <HomePage />
+          )}
+        </Route>
+        {!DEMO && <Route path="/r/:id">{(params) => <RoomPage id={params.id} />}</Route>}
+        <Route path="/demo">
+          <Suspense fallback={lazyFallback()}>
+            <DemoPage />
+          </Suspense>
+        </Route>
+        <Route path="/docs">
+          <Suspense fallback={lazyFallback()}>
+            <DocsPage />
+          </Suspense>
+        </Route>
+        <Route path="/crash" component={CrashProbe} />
+        <Route>
+          <NotFound />
+        </Route>
+      </Switch>
+    </ErrorBoundary>
   )
 }
 
@@ -53,31 +94,7 @@ export default function App() {
       >
         skip to content
       </a>
-      <Switch>
-        <Route path="/">
-          {DEMO ? (
-            <Suspense fallback={lazyFallback()}>
-              <DemoPage />
-            </Suspense>
-          ) : (
-            <HomePage />
-          )}
-        </Route>
-        {!DEMO && <Route path="/r/:id">{(params) => <RoomPage id={params.id} />}</Route>}
-        <Route path="/demo">
-          <Suspense fallback={lazyFallback()}>
-            <DemoPage />
-          </Suspense>
-        </Route>
-        <Route path="/docs">
-          <Suspense fallback={lazyFallback()}>
-            <DocsPage />
-          </Suspense>
-        </Route>
-        <Route>
-          <NotFound />
-        </Route>
-      </Switch>
+      <Routes />
       {reload && (
         <button
           onClick={reload}

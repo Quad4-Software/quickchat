@@ -4,6 +4,7 @@ import { Link } from 'wouter'
 import { DoorOpen } from 'lucide-react'
 import Mark from '../components/Mark'
 import DemoBadge from '../components/DemoBadge'
+import ErrorBoundary from '../components/ErrorBoundary'
 import ChatPane from '../room/ChatPane'
 import DemoStage from '../room/DemoStage'
 import { DemoMesh } from '../lib/demo'
@@ -68,7 +69,9 @@ export default function DemoPage() {
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <main id="main" className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <DemoStage />
+          <ErrorBoundary variant="panel" label="voice and video">
+            <DemoStage />
+          </ErrorBoundary>
         </main>
         <aside
           ref={asideRef}
