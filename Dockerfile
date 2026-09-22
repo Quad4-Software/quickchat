@@ -24,8 +24,8 @@ ARG VERSION=dev
 ARG REVISION=unknown
 RUN go build -trimpath \
     -ldflags="-s -w \
-      -X quad4/quickchat/internal/version.Version=${VERSION} \
-      -X quad4/quickchat/internal/version.Commit=${REVISION}" \
+      -X github.com/Quad4-Software/quickchat/internal/version.Version=${VERSION} \
+      -X github.com/Quad4-Software/quickchat/internal/version.Commit=${REVISION}" \
     -o /out/quickchat ./cmd/quickchat \
   && mkdir -p /out/data
 

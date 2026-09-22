@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"quad4/quickchat/internal/config"
-	"quad4/quickchat/internal/hub"
-	"quad4/quickchat/internal/rooms"
-	"quad4/quickchat/internal/store"
+	"github.com/Quad4-Software/quickchat/internal/config"
+	"github.com/Quad4-Software/quickchat/internal/hub"
+	"github.com/Quad4-Software/quickchat/internal/rooms"
+	"github.com/Quad4-Software/quickchat/internal/store"
 )
 
 func testConfig() config.Config {

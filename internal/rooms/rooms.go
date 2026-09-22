@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"quad4/quickchat/internal/store"
+	"github.com/Quad4-Software/quickchat/internal/store"
 )
 
 type Manager struct {

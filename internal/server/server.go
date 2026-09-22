@@ -16,12 +16,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"quad4/quickchat/internal/config"
-	"quad4/quickchat/internal/hub"
-	"quad4/quickchat/internal/lktoken"
-	"quad4/quickchat/internal/ratelimit"
-	"quad4/quickchat/internal/rooms"
-	"quad4/quickchat/web"
+	"github.com/Quad4-Software/quickchat/internal/config"
+	"github.com/Quad4-Software/quickchat/internal/hub"
+	"github.com/Quad4-Software/quickchat/internal/lktoken"
+	"github.com/Quad4-Software/quickchat/internal/ratelimit"
+	"github.com/Quad4-Software/quickchat/internal/rooms"
+	"github.com/Quad4-Software/quickchat/web"
 )
 
 //go:embed openapi.yaml

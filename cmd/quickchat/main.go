@@ -16,12 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"quad4/quickchat/internal/config"
-	"quad4/quickchat/internal/hub"
-	"quad4/quickchat/internal/rooms"
-	"quad4/quickchat/internal/server"
-	"quad4/quickchat/internal/store"
-	"quad4/quickchat/internal/version"
+	"github.com/Quad4-Software/quickchat/internal/config"
+	"github.com/Quad4-Software/quickchat/internal/hub"
+	"github.com/Quad4-Software/quickchat/internal/rooms"
+	"github.com/Quad4-Software/quickchat/internal/server"
+	"github.com/Quad4-Software/quickchat/internal/store"
+	"github.com/Quad4-Software/quickchat/internal/version"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module quad4/quickchat
+module github.com/Quad4-Software/quickchat
 
 go 1.27.1
 

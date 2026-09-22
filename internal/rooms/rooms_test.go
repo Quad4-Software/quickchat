@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"quad4/quickchat/internal/store"
+	"github.com/Quad4-Software/quickchat/internal/store"
 )
 
 func newManager(t *testing.T, ttl time.Duration) *Manager {
