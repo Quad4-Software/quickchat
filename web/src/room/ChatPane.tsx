@@ -624,7 +624,8 @@ export default function ChatPane({
                 e.currentTarget.blur()
               }
             }}
-            placeholder="message  (/ to focus, enter to send)"
+            placeholder="message"
+            title="enter to send, / to focus"
             aria-label="message"
             rows={1}
             autoFocus
