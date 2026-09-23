@@ -45,7 +45,10 @@ export default defineConfig({
       ? [pwaStub, demoSpec]
       : [
           VitePWA({
-            registerType: 'prompt',
+            // autoUpdate bakes skipWaiting + clientsClaim into the
+            // worker so a new deploy activates on its own; pwa.ts still
+            // guards the page reload
+            registerType: 'autoUpdate',
             includeAssets: ['quad4-mark.svg', 'robots.txt', 'icon-*.png'],
             manifest: {
               name: 'quickchat',
@@ -68,6 +71,9 @@ export default defineConfig({
               ],
             },
             workbox: {
+              // drop precache entries from previous builds on activate so
+              // stale hashed assets cannot pile up or get served
+              cleanupOutdatedCaches: true,
               // precache the app shell by whitelist: entry, stage, fonts and
               // icons. lazy docs chunks are excluded since the reference needs
               // the live spec anyway. api, ws and p2p payloads are never cached
