@@ -98,21 +98,14 @@ export default function Stage({
       options={options}
       className="flex h-full flex-col"
     >
-      {e2eeUsable ? (
-        <p className="flex items-center justify-center gap-1.5 border-b border-border bg-card py-1 font-mono text-[10px] text-muted-foreground">
+      {e2eeKey && !e2eeUsable && (
+        <p
+          role="alert"
+          className="flex items-center justify-center gap-1.5 border-b border-border bg-card py-1 font-mono text-[10px] text-destructive"
+        >
           <Lock className="size-3" aria-hidden />
-          end-to-end encrypted media
+          this browser cannot do media e2ee; media is dtls-srtp only
         </p>
-      ) : (
-        e2eeKey && (
-          <p
-            role="alert"
-            className="flex items-center justify-center gap-1.5 border-b border-border bg-card py-1 font-mono text-[10px] text-destructive"
-          >
-            <Lock className="size-3" aria-hidden />
-            this browser cannot do media e2ee; media is dtls-srtp only
-          </p>
-        )
       )}
       <StageInner serverUrl={grant.url} onDebug={onDebug} debugOpen={debugOpen} />
       <RoomAudioRenderer />
