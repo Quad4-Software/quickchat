@@ -146,9 +146,9 @@ jobs:
       - name: Compute subjects
         id: hashes
         run: |
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) \
-            -exec sha256sum {} \; | base64 -w0 | \
-            { read -r h; echo "hashes=$h" >> "$GITHUB_OUTPUT"; }
+          hashes=$(find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) \
+            -exec sha256sum {} \; | base64 -w0)
+          echo "hashes=$hashes" >> "$GITHUB_OUTPUT"
 
   # SHA pinned callers cannot fetch the prebuilt generator
   # (slsa-framework/slsa-github-generator issue 4503), so
