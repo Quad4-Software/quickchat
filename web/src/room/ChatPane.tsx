@@ -525,10 +525,13 @@ export default function ChatPane({
   }, [])
 
   // stable callbacks keep the memoized rows from re-rendering
-  const onDeleteMsg = useCallback((msg: ChatMessage) => {
-    meshRef.current?.broadcastDelete(msg.id)
-    tombstone(msg.id)
-  }, [tombstone])
+  const onDeleteMsg = useCallback(
+    (msg: ChatMessage) => {
+      meshRef.current?.broadcastDelete(msg.id)
+      tombstone(msg.id)
+    },
+    [tombstone],
+  )
 
   const onReactMsg = useCallback((msg: ChatMessage, emoji: string) => {
     const mine = msg.reactions?.[emoji]?.includes(selfRef.current.name) ?? false
