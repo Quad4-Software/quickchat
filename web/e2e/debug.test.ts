@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 
 async function createRoom(page: Page): Promise<string> {
   // commit, not load or domcontentloaded: firefox intermittently
-  // stalls the navigation waiter though the page fully renders;
+  // stalls the navigation waiter though the page fully renders.
   // assertions wait on rendered elements anyway
   await page.goto('/', { waitUntil: 'commit' })
   await page.getByRole('button', { name: 'new room' }).click()

@@ -36,14 +36,15 @@ import {
   MicOff,
   Minimize,
   MonitorUp,
+  Phone,
   PhoneOff,
   PictureInPicture2,
   SignalLow,
-  SignalZero,
   UserRound,
   Video,
   Volume2,
   VolumeX,
+  WifiOff,
   X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
@@ -72,10 +73,10 @@ export default function Stage({
   onDebug?: (() => void) | undefined
   debugOpen?: boolean | undefined
   // compact collapses the stage to a tile strip so chat keeps the
-  // screen on small viewports; the parent decides when to apply it
+  // screen on small viewports, the parent decides when to apply it
   compact?: boolean | undefined
 }) {
-  // the key arrives via URL fragment and is set once; it never reaches the
+  // the key arrives via URL fragment and is set once, it never reaches the
   // server. webAudioMix routes remote tracks through sdk-managed gain
   // nodes so per participant volume can go above 100 percent. browsers
   // without insertable streams cannot do e2ee and fall back to dtls-srtp
@@ -122,6 +123,7 @@ export default function Stage({
       )}
       <StageInner
         serverUrl={grant.url}
+        token={grant.token}
         onDebug={onDebug}
         debugOpen={debugOpen}
         compact={compact}
@@ -142,11 +144,13 @@ function fmtKbps(
 
 function StageInner({
   serverUrl,
+  token,
   onDebug,
   debugOpen,
   compact,
 }: {
   serverUrl: string
+  token: string
   onDebug?: (() => void) | undefined
   debugOpen?: boolean | undefined
   compact?: boolean | undefined
@@ -224,7 +228,7 @@ function StageInner({
     }
   }, [room, volumes])
 
-  // resume the shared audio context on the first gesture inside the stage;
+  // resume the shared audio context on the first gesture inside the stage,
   // browsers start it suspended when it was created before interaction.
   // retries until playback actually starts then removes itself
   useEffect(() => {
@@ -253,7 +257,7 @@ function StageInner({
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
 
-  // livekit reconnects on its own; the banner just makes that visible
+  // livekit reconnects on its own, the banner just makes that visible
   useEffect(() => {
     const on = (s: ConnectionState) => {
       if (s === 'connected') setWasConnected(true)
@@ -419,7 +423,7 @@ function StageInner({
   const rest = featured ? tracks.filter((t) => t !== featured) : tracks
 
   // the grid computes a column count and tile size that fits every tile
-  // inside the measured stage area. tiles shrink to fit; the stage never
+  // inside the measured stage area. tiles shrink to fit, the stage never
   // scrolls
   const grid = gridLayout(tracks.length, gridSize.width, gridSize.height)
 
@@ -438,7 +442,7 @@ function StageInner({
           )}
         >
           {roomState === 'disconnected' ? (
-            <SignalZero className="size-3.5 shrink-0" aria-hidden />
+            <WifiOff className="size-3.5 shrink-0" aria-hidden />
           ) : (
             <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
           )}
@@ -566,12 +570,16 @@ function StageInner({
         }}
         onDebug={onDebug}
         debugOpen={debugOpen}
+        disconnected={roomState === 'disconnected'}
+        onReconnect={() => {
+          void room.connect(serverUrl, token).catch(() => {})
+        }}
       />
     </div>
   )
 }
 
-// livekit recomputes connection quality continuously; subscribe so a
+// livekit recomputes connection quality continuously, subscribe so a
 // degrading link is visible on the tile instead of only in the debug
 // panel
 function useConnectionQuality(p: Participant) {
@@ -665,7 +673,7 @@ function Tile({
           <SignalLow className="size-3 text-warning" aria-label="poor connection" />
         )}
         {quality === 'lost' && (
-          <SignalZero className="size-3 text-destructive" aria-label="connection lost" />
+          <WifiOff className="size-3 text-destructive" aria-label="connection lost" />
         )}
         {isScreen && <MonitorUp className="size-3 text-muted-foreground" />}
       </div>
@@ -762,6 +770,8 @@ function Controls({
   onFullscreen,
   onDebug,
   debugOpen,
+  disconnected,
+  onReconnect,
 }: {
   view: View
   onView: (v: View) => void
@@ -769,6 +779,8 @@ function Controls({
   onFullscreen: () => void
   onDebug?: (() => void) | undefined
   debugOpen?: boolean | undefined
+  disconnected?: boolean | undefined
+  onReconnect?: (() => void) | undefined
 }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -823,15 +835,30 @@ function Controls({
         </button>
       )}
       <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
-      <DisconnectButton
-        className={cn(
-          'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
-          'text-sm font-medium text-destructive hover:bg-destructive/10',
-        )}
-      >
-        <PhoneOff className="size-4" aria-hidden />
-        <span className="sr-only">disconnect</span>
-      </DisconnectButton>
+      {disconnected ? (
+        <button
+          onClick={onReconnect}
+          aria-label="connect"
+          title="connect"
+          className={cn(
+            'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
+            'text-sm font-medium text-success hover:bg-success/10',
+          )}
+        >
+          <Phone className="size-4" aria-hidden />
+          <span className="sr-only">connect</span>
+        </button>
+      ) : (
+        <DisconnectButton
+          className={cn(
+            'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
+            'text-sm font-medium text-destructive hover:bg-destructive/10',
+          )}
+        >
+          <PhoneOff className="size-4" aria-hidden />
+          <span className="sr-only">disconnect</span>
+        </DisconnectButton>
+      )}
     </div>
   )
 }

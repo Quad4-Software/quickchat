@@ -126,7 +126,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* kill double tap zoom delay on interactive chrome; region scrolls keep
+/* kill double tap zoom delay on interactive chrome, region scrolls keep
    their own gesture handling */
 button,
 a,

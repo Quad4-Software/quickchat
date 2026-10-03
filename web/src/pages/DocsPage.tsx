@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { ApiReferenceReact } from '@scalar/api-reference-react'
 import { SITE } from '../lib/site'
 
-// the live spec is served by the go server; the static demo bundle ships a
+// the live spec is served by the go server, the static demo bundle ships a
 // copy at the deploy base so /docs works on github pages too
 const SPEC_URL =
   import.meta.env.VITE_DEMO === '1'

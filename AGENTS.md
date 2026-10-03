@@ -112,7 +112,7 @@ Software.
   go:embed), then vite build, then scripts/inline-css.mjs which inlines
   the css bundle into index.html to kill the render-blocking request.
 - The vite test config excludes web/e2e so vitest never picks up
-  playwright specs. Vitest runs in node; component tests opt into
+  playwright specs. Vitest runs in node, component tests opt into
   happy-dom per file with the @vitest-environment pragma (see
   MessageRow.test.tsx). e2e raises QUICKCHAT_RATE_* limits and lowers
   QUICKCHAT_MAX_FILE via env so the suite exercises limits without
@@ -125,12 +125,12 @@ Software.
   for /docs, and DemoMesh + DemoStage scripted peers instead of a server.
 - Asset urls that ship in runtime js (css masks, the docs spec url) must
   use import.meta.env.BASE_URL so they resolve under a pages subpath.
-- #root is locked to 100dvh with document overflow hidden; every region
+- #root is locked to 100dvh with document overflow hidden, every region
   scrolls internally, never the page. Keep room panels min-h-0.
 - Mobile room layout (<md): the stage collapses to a compact tile strip
   above the chat (Stage compact prop). A header toggle flips focus
   between chat and a full stage, badging unread chat while hidden. The
-  composer autofocus is disabled on coarse pointers; enterKeyHint=send
+  composer autofocus is disabled on coarse pointers, enterKeyHint=send
   gives the mobile keyboard a send key. Safe area insets pad the
   header, controls bar, and composer.
 - Signaling reports a state machine (connecting/online/reconnecting/
@@ -141,11 +141,11 @@ Software.
 - Playwright runs four projects: chromium desktop+mobile, firefox,
   webkit. live.test.ts activates only when LIVEKIT_URL is set. WebKit
   headless cannot resolve its own mdns ice candidates, so p2p mesh specs
-  skip there; media e2ee is unsupported in webkit and must degrade to
+  skip there, media e2ee is unsupported in webkit and must degrade to
   dtls-srtp with a visible warning.
 - Remote participant volume lives in Stage via webAudioMix gain nodes
   (boost above 100 percent) and persists in localStorage qc-volumes.
-- DebugPanel polls registered stats collectors every 2s while open; do
+- DebugPanel polls registered stats collectors every 2s while open, do
   not run getStats or other polling when the panel is closed.
 - Error surfaces render through ErrorView (404, dead room, crash page).
   ErrorBoundary wraps routes (resets on navigation) and the Stage and

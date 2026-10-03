@@ -10,7 +10,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // deploy subpath (for example /quickchat/ on github pages).
 const DEMO = process.env.VITE_DEMO === '1'
 
-// pwa.ts imports the virtual register module; stub it as a no-op when the
+// pwa.ts imports the virtual register module, stub it as a no-op when the
 // plugin is disabled so the demo bundle stays self contained
 const pwaStub = {
   name: 'demo-pwa-stub',
@@ -46,7 +46,7 @@ export default defineConfig({
       : [
           VitePWA({
             // autoUpdate bakes skipWaiting + clientsClaim into the
-            // worker so a new deploy activates on its own; pwa.ts still
+            // worker so a new deploy activates on its own, pwa.ts still
             // guards the page reload
             registerType: 'autoUpdate',
             includeAssets: ['quad4-mark.svg', 'robots.txt', 'icon-*.png'],

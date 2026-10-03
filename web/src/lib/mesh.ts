@@ -93,7 +93,7 @@ export interface MeshOptions {
 }
 
 // ChatSession is the transport surface ChatPane needs. Mesh implements
-// it over real WebRTC channels; DemoMesh implements it with scripted
+// it over real WebRTC channels, DemoMesh implements it with scripted
 // peers so the app can run with no server at all.
 export interface PeerLinkStats {
   peer: Peer
@@ -112,7 +112,7 @@ export interface ChatSession {
   broadcastChat(body: string, file?: FileMeta): string
   broadcastTyping(on: boolean): void
   sendFile(file: Blob, meta: FileMeta, msgId: string): void
-  /** per-peer link stats for the debug panel; demo sessions may omit */
+  /** per-peer link stats for the debug panel, demo sessions may omit */
   stats?(): Promise<PeerLinkStats[]>
   /** skip reconnect backoff and redial signaling immediately */
   reconnect?(): void

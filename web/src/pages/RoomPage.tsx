@@ -116,7 +116,7 @@ export default function RoomPage({ id }: { id: string }) {
     setJoining(true)
     localStorage.setItem('qc-name', n)
     try {
-      // room info can still be in flight; fetch it so a fast join does
+      // room info can still be in flight, fetch it so a fast join does
       // not misreport the room as having no live av
       const room = info ?? (await getRoom(id))
       setInfo(room)

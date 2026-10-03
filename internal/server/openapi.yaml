@@ -20,14 +20,14 @@ info:
 
     Server to client events:
 
-    - `welcome` `{self: Peer, peers: Peer[]}` — sent once on connect
-    - `peer_joined` `{peer: Peer}` — a peer joined the room
-    - `peer_left` `{peer: Peer}` — a peer left the room
-    - `signal` `{from: Peer, data: object}` — relayed SDP or ICE payload
+    - `welcome` `{self: Peer, peers: Peer[]}` - sent once on connect
+    - `peer_joined` `{peer: Peer}` - a peer joined the room
+    - `peer_left` `{peer: Peer}` - a peer left the room
+    - `signal` `{from: Peer, data: object}` - relayed SDP or ICE payload
 
     Client to server frames:
 
-    - `signal` `{to: string, data: object}` — relay `data` to peer `to`
+    - `signal` `{to: string, data: object}` - relay `data` to peer `to`
 
     Chat, typing indicators, and file transfer run over RTCDataChannel
     between peers. The newcomer creates offers to every existing peer;

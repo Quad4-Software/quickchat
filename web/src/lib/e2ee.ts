@@ -35,7 +35,7 @@ export function keyFromHash(hash: string): string | null {
   }
 }
 
-// media e2ee needs insertable streams or script transform; mirrors the
+// media e2ee needs insertable streams or script transform, mirrors the
 // livekit isE2EESupported check without pulling livekit-client into the
 // eager bundle
 export function mediaE2EESupported(): boolean {

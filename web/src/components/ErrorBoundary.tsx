@@ -30,7 +30,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(err: Error, info: ErrorInfo) {
-    // a stale bundle crashes on import(); reload once for the new index
+    // a stale bundle crashes on import(), reload once for the new index
     reloadForChunkError(err)
     console.error('ui crash:', err, info.componentStack)
   }

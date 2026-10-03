@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 
-// these tests only run when LIVEKIT_URL is set; the playwright config
+// these tests only run when LIVEKIT_URL is set, the playwright config
 // forwards the credentials to the app under test. Run the bundled
 // livekit container first:
 //   podman run -d --name qc-livekit --net=host \
@@ -17,7 +17,7 @@ test.beforeEach(() => {
 
 async function createRoom(page: Page): Promise<string> {
   // commit, not load or domcontentloaded: firefox intermittently
-  // stalls the navigation waiter though the page fully renders;
+  // stalls the navigation waiter though the page fully renders,
   // assertions wait on rendered elements anyway
   await page.goto('/', { waitUntil: 'commit' })
   await page.getByRole('button', { name: 'new room' }).click()
@@ -120,6 +120,24 @@ test('per participant volume control boosts remote audio', async ({
 
   await ctx1.close()
   await ctx2.close()
+})
+
+test('disconnect flips to a connect button that rejoins', async ({ page }) => {
+  const roomUrl = await createRoom(page)
+  await join(page, roomUrl, 'alice')
+  await page.getByRole('button', { name: 'microphone' }).waitFor({
+    state: 'visible',
+    timeout: 20_000,
+  })
+
+  await page.getByRole('button', { name: 'disconnect' }).click()
+  const connect = page.getByRole('button', { name: 'connect', exact: true })
+  await expect(connect).toBeVisible()
+
+  await connect.click()
+  await expect(page.getByRole('button', { name: 'disconnect' })).toBeVisible({
+    timeout: 20_000,
+  })
 })
 
 test('debug panel shows livekit media stats', async ({ page }) => {

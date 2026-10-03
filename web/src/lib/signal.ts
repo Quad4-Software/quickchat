@@ -23,7 +23,7 @@ export type SignalStatus = 'connecting' | 'online' | 'reconnecting' | 'offline'
 
 export interface SignalState {
   status: SignalStatus
-  /** consecutive failed dials; 0 while online or on the first attempt */
+  /** consecutive failed dials, 0 while online or on the first attempt */
   attempt: number
 }
 
@@ -77,7 +77,7 @@ export class SignalingSocket {
 
   private onOffline = () => {
     if (this.closed) return
-    // a dead socket still fires onclose; report offline once and stop
+    // a dead socket still fires onclose, report offline once and stop
     // scheduling until the browser comes back
     if (this.timer !== null) {
       window.clearTimeout(this.timer)
@@ -157,11 +157,11 @@ export class SignalingSocket {
     }, delay)
   }
 
-  // retryNow skips the remaining backoff; used by the manual retry
+  // retryNow skips the remaining backoff, used by the manual retry
   // affordance and safe to call while online
   retryNow() {
     if (this.closed || this.ws?.readyState === WebSocket.OPEN) return
-    // dialing a dead network can wedge a socket without events; stay
+    // dialing a dead network can wedge a socket without events, stay
     // in offline until the browser reports connectivity
     if (!navigator.onLine) {
       this.report('offline')

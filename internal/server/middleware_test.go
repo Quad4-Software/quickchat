@@ -102,7 +102,7 @@ func TestGzip(t *testing.T) {
 func TestRateLimit(t *testing.T) {
 	ts := newTestServer(t, testConfig())
 	var last int
-	// create limiter is 12/min burst 6; 7 posts should trip it
+	// create limiter is 12/min burst 6, 7 posts should trip it
 	for range 7 {
 		res, err := http.Post(ts.URL+"/api/rooms", "", nil)
 		if err != nil {

@@ -86,7 +86,7 @@ The p2p mesh negotiates ICE between browsers:
 ## Deploy
 
 - `docker-compose.yml`: all in one stack. Traefik terminates TLS for
-  the app and for LiveKit signaling on `lk.<domain>`; media uses
+  the app and for LiveKit signaling on `lk.<domain>`, media uses
   7881/tcp and 7882/udp directly.
 - `docker-compose.coolify.yml`: same two services for Coolify's docker
   compose build pack. Assign a domain to quickchat (port 8080) and one

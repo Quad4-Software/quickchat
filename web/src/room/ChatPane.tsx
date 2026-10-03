@@ -30,7 +30,7 @@ const toneForIce = (s: RTCIceConnectionState) =>
       : ('warn' as const)
 
 const MAX_MESSAGES = 500
-// blobs live in memory only; bound total retention so a busy room can
+// blobs live in memory only, bound total retention so a busy room can
 // not grow the tab without limit
 const MAX_BLOB_BYTES = 256 << 20
 const TYPING_MS = 4000
@@ -67,7 +67,7 @@ export default function ChatPane({
   name: string
   iceServers: string[]
   maxFileSize: number
-  // defaults to the real webrtc mesh; demo mode injects a scripted one
+  // defaults to the real webrtc mesh, demo mode injects a scripted one
   createSession?: (opts: MeshOptions) => ChatSession
   // fired for each remote chat event so a collapsed parent can badge
   onChatActivity?: (() => void) | undefined
@@ -217,7 +217,7 @@ export default function ChatPane({
         onWelcome(self, roster) {
           selfRef.current = self
           // peers absent from a post-reconnect roster left during the
-          // outage; report it the same as a live peer_left
+          // outage, report it the same as a live peer_left
           const gone = peersRef.current.filter((p) => !roster.some((r) => r.id === p.id))
           peersRef.current = roster
           setPeers(roster)
@@ -717,7 +717,7 @@ export default function ChatPane({
             aria-label="message"
             rows={1}
             // on touch devices autofocus pops the on-screen keyboard and
-            // covers the chat right after joining; keep it to mice
+            // covers the chat right after joining, keep it to mice
             autoFocus={!matchMedia('(pointer: coarse)').matches}
             enterKeyHint="send"
             autoComplete="off"

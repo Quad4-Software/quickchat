@@ -4,7 +4,7 @@ import { AxeBuilder } from '@axe-core/playwright'
 
 async function createRoom(page: Page): Promise<string> {
   // commit, not load or domcontentloaded: firefox intermittently
-  // stalls the navigation waiter though the page fully renders;
+  // stalls the navigation waiter though the page fully renders.
   // assertions wait on rendered elements anyway
   await page.goto('/', { waitUntil: 'commit' })
   await page.getByRole('button', { name: 'new room' }).click()
