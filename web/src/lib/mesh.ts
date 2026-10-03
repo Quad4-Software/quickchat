@@ -1,11 +1,20 @@
 import { SignalingSocket, newNonce } from './signal'
 import type { SignalData, SignalEvent, SignalState } from './signal'
-import type { FileMeta, Peer } from './types'
+import type { FileMeta, Peer, ReplyRef } from './types'
 
 // Wire protocol on the 'chat' data channel (json, ordered, reliable).
 type Wire =
-  | { t: 'chat'; id: string; body?: string; file?: FileMeta; ts: number }
+  | {
+      t: 'chat'
+      id: string
+      body?: string
+      file?: FileMeta
+      ts: number
+      reply?: ReplyRef
+    }
   | { t: 'typing'; on: boolean }
+  | { t: 'delete'; id: string }
+  | { t: 'react'; id: string; emoji: string; on: boolean }
 
 // Wire protocol on 'file-<id>' channels: first frame is json meta, then
 // binary chunks, then the sender closes the channel to mark eof.
@@ -18,6 +27,7 @@ export interface ChatEvent {
   peer: Peer
   body?: string
   file?: FileMeta
+  reply?: ReplyRef
   ts: number
 }
 
@@ -44,6 +54,8 @@ export interface MeshHandlers {
   onPeerLeft: (peer: Peer) => void
   onChat: (msg: ChatEvent) => void
   onTyping: (peer: Peer, typing: boolean) => void
+  onDelete: (peer: Peer, id: string) => void
+  onReact: (peer: Peer, id: string, emoji: string, on: boolean) => void
   onFileProgress: (p: FileProgress) => void
   onFileDone: (fileId: string, msgId: string, peer: Peer, blob: Blob) => void
   onFileError: (fileId: string, msgId: string, peer: Peer, reason: string) => void
@@ -109,8 +121,10 @@ export interface PeerLinkStats {
 export interface ChatSession {
   connect(): void
   close(): void
-  broadcastChat(body: string, file?: FileMeta): string
+  broadcastChat(body: string, file?: FileMeta, reply?: ReplyRef): string
   broadcastTyping(on: boolean): void
+  broadcastDelete(id: string): void
+  broadcastReact(id: string, emoji: string, on: boolean): void
   sendFile(file: Blob, meta: FileMeta, msgId: string): void
   /** per-peer link stats for the debug panel, demo sessions may omit */
   stats?(): Promise<PeerLinkStats[]>
@@ -150,15 +164,32 @@ export class Mesh implements ChatSession {
   // broadcastChat sends a chat frame on every open chat channel and
   // returns the message id. Frames queue briefly per peer so a message
   // sent while a channel is still opening is not dropped.
-  broadcastChat(body: string, file?: FileMeta): string {
+  broadcastChat(body: string, file?: FileMeta, reply?: ReplyRef): string {
     const id = `${this.self?.id ?? 'me'}-${newNonce()}`
-    const frame = JSON.stringify({ t: 'chat', id, ts: Date.now(), body, file })
+    const frame = JSON.stringify({
+      t: 'chat',
+      id,
+      ts: Date.now(),
+      body,
+      file,
+      ...(reply ? { reply } : {}),
+    })
     for (const p of this.conns.values()) this.sendChatFrame(p, frame)
     return id
   }
 
   broadcastTyping(on: boolean) {
     const frame = JSON.stringify({ t: 'typing', on })
+    for (const p of this.conns.values()) this.sendChatFrame(p, frame)
+  }
+
+  broadcastDelete(id: string) {
+    const frame = JSON.stringify({ t: 'delete', id })
+    for (const p of this.conns.values()) this.sendChatFrame(p, frame)
+  }
+
+  broadcastReact(id: string, emoji: string, on: boolean) {
+    const frame = JSON.stringify({ t: 'react', id, emoji, on })
     for (const p of this.conns.values()) this.sendChatFrame(p, frame)
   }
 
@@ -421,9 +452,35 @@ export class Mesh implements ChatSession {
   private onWire(p: PeerConn, w: Wire) {
     if (w.t === 'typing') {
       this.h.onTyping(p.peer, !!w.on)
+    } else if (w.t === 'delete' && typeof w.id === 'string' && w.id) {
+      this.h.onDelete(p.peer, w.id)
+    } else if (
+      w.t === 'react' &&
+      typeof w.id === 'string' &&
+      w.id &&
+      typeof w.emoji === 'string' &&
+      w.emoji &&
+      w.emoji.length <= 8
+    ) {
+      this.h.onReact(p.peer, w.id, w.emoji, !!w.on)
     } else if (w.t === 'chat' && typeof w.id === 'string' && w.id) {
       const msg: ChatEvent = { id: w.id, peer: p.peer, ts: w.ts || Date.now() }
       if (typeof w.body === 'string' && w.body) msg.body = w.body.slice(0, 4096)
+      if (w.reply && typeof w.reply === 'object') {
+        const r = w.reply
+        if (typeof r.id === 'string' && r.id && typeof r.name === 'string') {
+          msg.reply = {
+            id: r.id,
+            name: r.name.slice(0, 64),
+            ...(typeof r.body === 'string' && r.body
+              ? { body: r.body.slice(0, 200) }
+              : {}),
+            ...(typeof r.file === 'string' && r.file
+              ? { file: r.file.slice(0, 255) }
+              : {}),
+          }
+        }
+      }
       if (w.file && typeof w.file === 'object') {
         const f = w.file
         if (

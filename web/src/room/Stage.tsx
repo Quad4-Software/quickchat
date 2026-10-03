@@ -39,6 +39,7 @@ import {
   Phone,
   PhoneOff,
   PictureInPicture2,
+  Settings,
   SignalLow,
   UserRound,
   Video,
@@ -170,6 +171,20 @@ function StageInner({
   const [roomState, setRoomState] = useState<ConnectionState>(room.state)
   // a disconnect only deserves an alarm after a session existed
   const [wasConnected, setWasConnected] = useState(room.state === 'connected')
+  const [ptt, setPtt] = useState(() => localStorage.getItem('qc-ptt') === '1')
+  const [talking, setTalking] = useState(false)
+  const [saver, setSaver] = useState(() => localStorage.getItem('qc-saver') === '1')
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [chosen, setChosen] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('qc-devices') ?? '{}') as Record<
+        string,
+        string
+      >
+    } catch {
+      return {}
+    }
+  })
   const rootRef = useRef<HTMLDivElement>(null)
   const [gridRef, gridSize] = useElementSize<HTMLDivElement>()
   const prevBytes = useRef(new Map<string, { bytes: number; ts: number }>())
@@ -272,6 +287,127 @@ function StageInner({
       room.off(RoomEvent.ConnectionStateChanged, on)
     }
   }, [room])
+
+  // keep the device list fresh so the settings menu can offer real
+  // hardware, labels populate after first permission grant
+  useEffect(() => {
+    let live = true
+    const load = () => {
+      void navigator.mediaDevices
+        .enumerateDevices()
+        .then((d) => {
+          if (live) setDevices(d)
+        })
+        .catch(() => {})
+    }
+    load()
+    navigator.mediaDevices.addEventListener('devicechange', load)
+    return () => {
+      live = false
+      navigator.mediaDevices.removeEventListener('devicechange', load)
+    }
+  }, [])
+
+  // in ptt mode the mic stays muted until the hold button or space bar
+  // is pressed, and the same effect re-asserts mute after a reconnect
+  useEffect(() => {
+    if (!ptt || roomState !== 'connected') return
+    void room.localParticipant.setMicrophoneEnabled(talking).catch(() => {})
+  }, [ptt, talking, roomState, room])
+
+  // space holds talk while ptt is on, never while typing
+  useEffect(() => {
+    if (!ptt) return
+    const down = (e: KeyboardEvent) => {
+      if (e.repeat || e.code !== 'Space') return
+      const t = e.target as HTMLElement
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
+      e.preventDefault()
+      setTalking(true)
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setTalking(false)
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [ptt])
+
+  // data saver caps publish bitrates; reapply whenever a track appears
+  // so late camera or share starts inherit the cap
+  useEffect(() => {
+    const apply = () => {
+      const cap = (
+        track: { sender: RTCRtpSender | undefined } | undefined | null,
+        bitrate: number,
+        fps?: number,
+      ) => {
+        const sender = track?.sender
+        if (!sender) return
+        try {
+          const params = sender.getParameters()
+          for (const enc of params.encodings) {
+            if (saver) {
+              enc.maxBitrate = bitrate
+              if (fps) enc.maxFramerate = fps
+            } else {
+              delete enc.maxBitrate
+              delete enc.maxFramerate
+            }
+          }
+          void sender.setParameters(params).catch(() => {})
+        } catch {
+          // sender not ready yet, next publish event retries
+        }
+      }
+      for (const pub of room.localParticipant.videoTrackPublications.values()) {
+        cap(pub.track, 300_000, 15)
+      }
+      for (const pub of room.localParticipant.audioTrackPublications.values()) {
+        cap(pub.track, 32_000)
+      }
+    }
+    apply()
+    room.on(RoomEvent.LocalTrackPublished, apply)
+    return () => {
+      room.off(RoomEvent.LocalTrackPublished, apply)
+    }
+  }, [room, saver])
+
+  // restore saved device picks once the session is up
+  const chosenRef = useRef(chosen)
+  useEffect(() => {
+    if (roomState !== 'connected') return
+    for (const [kind, id] of Object.entries(chosenRef.current)) {
+      void room.switchActiveDevice(kind as MediaDeviceKind, id).catch(() => {})
+    }
+  }, [roomState, room])
+
+  const onDevice = (kind: MediaDeviceKind, id: string) => {
+    const next = { ...chosen, [kind]: id }
+    setChosen(next)
+    chosenRef.current = next
+    localStorage.setItem('qc-devices', JSON.stringify(next))
+    void room.switchActiveDevice(kind, id).catch(() => {})
+  }
+
+  const togglePtt = () => {
+    const next = !ptt
+    setPtt(next)
+    localStorage.setItem('qc-ptt', next ? '1' : '0')
+    if (!next && roomState === 'connected') {
+      void room.localParticipant.setMicrophoneEnabled(true).catch(() => {})
+    }
+  }
+
+  const toggleSaver = () => {
+    const next = !saver
+    setSaver(next)
+    localStorage.setItem('qc-saver', next ? '1' : '0')
+  }
 
   useEffect(() => {
     const onErr = (err: Error, kind?: MediaDeviceKind) => {
@@ -578,6 +714,15 @@ function StageInner({
         onReconnect={() => {
           void room.connect(serverUrl, token).catch(() => {})
         }}
+        ptt={ptt}
+        talking={talking}
+        onTalk={setTalking}
+        onPtt={togglePtt}
+        saver={saver}
+        onSaver={toggleSaver}
+        devices={devices}
+        chosen={chosen}
+        onDevice={onDevice}
       />
     </div>
   )
@@ -776,6 +921,15 @@ function Controls({
   debugOpen,
   disconnected,
   onReconnect,
+  ptt,
+  talking,
+  onTalk,
+  onPtt,
+  saver,
+  onSaver,
+  devices,
+  chosen,
+  onDevice,
 }: {
   view: View
   onView: (v: View) => void
@@ -785,13 +939,42 @@ function Controls({
   debugOpen?: boolean | undefined
   disconnected?: boolean | undefined
   onReconnect?: (() => void) | undefined
+  ptt?: boolean | undefined
+  talking?: boolean | undefined
+  onTalk?: ((on: boolean) => void) | undefined
+  onPtt?: (() => void) | undefined
+  saver?: boolean | undefined
+  onSaver?: (() => void) | undefined
+  devices?: MediaDeviceInfo[] | undefined
+  chosen?: Record<string, string> | undefined
+  onDevice?: ((kind: MediaDeviceKind, id: string) => void) | undefined
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-      <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
-        <Mic className="size-4" aria-hidden />
-        <span className="sr-only">microphone</span>
-      </TrackToggle>
+    <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      {ptt ? (
+        <button
+          onPointerDown={() => onTalk?.(true)}
+          onPointerUp={() => onTalk?.(false)}
+          onPointerLeave={() => onTalk?.(false)}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-pressed={talking}
+          aria-label="hold to talk"
+          title="hold to talk (or hold space)"
+          className={cn(
+            toggleClass,
+            'select-none touch-none',
+            talking && 'border-success text-success',
+          )}
+        >
+          <Mic className="size-4" aria-hidden />
+          <span className="hidden sm:inline">hold to talk</span>
+        </button>
+      ) : (
+        <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
+          <Mic className="size-4" aria-hidden />
+          <span className="sr-only">microphone</span>
+        </TrackToggle>
+      )}
       <TrackToggle source={Track.Source.Camera} className={toggleClass}>
         <Video className="size-4" aria-hidden />
         <span className="sr-only">camera</span>
@@ -838,6 +1021,17 @@ function Controls({
           <Activity className="size-4" aria-hidden />
         </button>
       )}
+      {onDevice && (
+        <SettingsMenu
+          devices={devices ?? []}
+          chosen={chosen ?? {}}
+          onDevice={onDevice}
+          ptt={ptt}
+          onPtt={onPtt}
+          saver={saver}
+          onSaver={onSaver}
+        />
+      )}
       <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
       {disconnected ? (
         <button
@@ -862,6 +1056,109 @@ function Controls({
           <PhoneOff className="size-4" aria-hidden />
           <span className="sr-only">disconnect</span>
         </DisconnectButton>
+      )}
+    </div>
+  )
+}
+
+function SettingsMenu({
+  devices,
+  chosen,
+  onDevice,
+  ptt,
+  onPtt,
+  saver,
+  onSaver,
+}: {
+  devices: MediaDeviceInfo[]
+  chosen: Record<string, string>
+  onDevice: (kind: MediaDeviceKind, id: string) => void
+  ptt?: boolean | undefined
+  onPtt?: (() => void) | undefined
+  saver?: boolean | undefined
+  onSaver?: (() => void) | undefined
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  const kinds: { kind: MediaDeviceKind; label: string }[] = [
+    { kind: 'audioinput', label: 'microphone' },
+    { kind: 'videoinput', label: 'camera' },
+    { kind: 'audiooutput', label: 'speaker' },
+  ]
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-label="media settings"
+        aria-expanded={open}
+        title="media settings"
+        className={toggleClass}
+      >
+        <Settings className="size-4" aria-hidden />
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="media settings"
+          className="fixed bottom-20 right-3 z-50 w-64 space-y-3 rounded-md border border-border bg-card p-3 shadow-md"
+        >
+          {kinds.map(({ kind, label }) => {
+            const list = devices.filter((d) => d.kind === kind)
+            return (
+              <label key={kind} className="block text-xs">
+                <span className="pb-1 block text-muted-foreground">{label}</span>
+                <select
+                  aria-label={label}
+                  value={chosen[kind] ?? ''}
+                  onChange={(e) => onDevice(kind, e.target.value)}
+                  className="w-full rounded-md border border-border bg-recessed px-2 py-1.5 text-xs text-foreground focus:border-border-strong focus:outline-none"
+                >
+                  <option value="">default</option>
+                  {list.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || `${label} ${d.deviceId.slice(0, 8)}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )
+          })}
+          <div className="space-y-1.5 border-t border-border pt-2.5">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+              <input
+                type="checkbox"
+                checked={Boolean(ptt)}
+                onChange={() => onPtt?.()}
+                className="accent-foreground"
+              />
+              push to talk
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+              <input
+                type="checkbox"
+                checked={Boolean(saver)}
+                onChange={() => onSaver?.()}
+                className="accent-foreground"
+              />
+              data saver (lower bitrates)
+            </label>
+          </div>
+        </div>
       )}
     </div>
   )

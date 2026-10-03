@@ -4,7 +4,7 @@
 // typing, and a file transfer the same way a real WebRTC peer would.
 import type { ChatSession, MeshOptions, MeshHandlers } from './mesh'
 import { newNonce } from './mesh'
-import type { FileMeta, Peer } from './types'
+import type { FileMeta, Peer, ReplyRef } from './types'
 
 const CONNECT_MS = 350
 const REPLY_TYPING_MS = 900
@@ -160,18 +160,37 @@ export class DemoMesh implements ChatSession {
     this.timers.push(window.setTimeout(tick, AMBIENT_MS))
   }
 
-  broadcastChat(body: string, file?: FileMeta): string {
+  broadcastChat(body: string, file?: FileMeta, reply?: ReplyRef): string {
     void file
     const id = `${this.self.id}-${newNonce()}`
     const peer = PEERS[this.replyIdx % PEERS.length]
-    const reply = REPLIES[this.replyIdx++ % REPLIES.length]
+    const scripted = REPLIES[this.replyIdx++ % REPLIES.length]
     this.after(REPLY_TYPING_MS, () => this.h.onTyping(peer, true))
     this.after(replyDelay(), () => {
       this.h.onTyping(peer, false)
-      this.h.onChat({ id: `demo-${newNonce()}`, peer, ts: Date.now(), body: reply })
+      // when the visitor replied to a peer message the scripted answer
+      // carries the same quote so the demo shows quote blocks too
+      this.h.onChat({
+        id: `demo-${newNonce()}`,
+        peer,
+        ts: Date.now(),
+        body: scripted,
+        ...(reply ? { reply: { id: reply.id, name: this.self.name, body } } : {}),
+      })
     })
     void body
     return id
+  }
+
+  broadcastDelete() {
+    // scripted peers never unsend, nothing to relay
+  }
+
+  broadcastReact(id: string, emoji: string, on: boolean) {
+    if (!on) return
+    // a scripted peer echoes the emoji back so reaction rows light up
+    const peer = PEERS[this.replyIdx % PEERS.length]
+    this.after(1200, () => this.h.onReact(peer, id, emoji, true))
   }
 
   broadcastTyping(on: boolean) {

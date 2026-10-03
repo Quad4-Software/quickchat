@@ -140,6 +140,27 @@ test('disconnect flips to a connect button that rejoins', async ({ page }) => {
   })
 })
 
+test('media settings shows devices and swaps mic for ptt', async ({ page }) => {
+  const roomUrl = await createRoom(page)
+  await join(page, roomUrl, 'alice')
+  await page.getByRole('button', { name: 'microphone' }).waitFor({
+    state: 'visible',
+    timeout: 20_000,
+  })
+
+  await page.getByRole('button', { name: 'media settings' }).click()
+  const menu = page.getByRole('dialog', { name: 'media settings' })
+  await expect(menu).toBeVisible()
+  await expect(menu.getByLabel('microphone')).toBeVisible()
+  await expect(menu.getByLabel('camera')).toBeVisible()
+  await expect(menu.getByLabel('speaker')).toBeVisible()
+  await menu.getByLabel('push to talk').click()
+  await page.getByRole('dialog', { name: 'media settings' }).press('Escape')
+
+  // the mic toggle is replaced by a hold button while ptt is on
+  await expect(page.getByRole('button', { name: 'hold to talk' })).toBeVisible()
+})
+
 test('debug panel shows livekit media stats', async ({ page }) => {
   const roomUrl = await createRoom(page)
   await join(page, roomUrl, 'alice')

@@ -22,12 +22,27 @@ export interface FileRef extends FileMeta {
   failed?: string | undefined
 }
 
+// ReplyRef is the quote block embedded in a chat frame. Messages are
+// never stored, so the quoted text travels with the reply itself.
+export interface ReplyRef {
+  id: string
+  name: string
+  body?: string
+  /** file name when the quoted message was a file */
+  file?: string
+}
+
 export interface ChatMessage {
   id: string
   peer: Peer
   body?: string
   file?: FileRef
   ts: number
+  reply?: ReplyRef
+  /** emoji to peer names who placed it */
+  reactions?: Record<string, string[]>
+  /** sender unsent it; body and file are stripped */
+  deleted?: boolean
   /** local only: sending in progress */
   pending?: boolean
   /** local only: presence line rendered as a system event, not a chat */

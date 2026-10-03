@@ -1,26 +1,33 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   Bell,
   BellOff,
   BellRing,
+  CornerUpLeft,
   LoaderCircle,
+  Mic,
   Paperclip,
   SendHorizonal,
+  Smile,
+  Square,
   Users,
   WifiOff,
+  X,
 } from 'lucide-react'
+import EmojiPicker from './EmojiPicker'
 import { Mesh, newNonce } from '../lib/mesh'
 import type { ChatSession, MeshOptions, PeerLink } from '../lib/mesh'
 import type { SignalState } from '../lib/signal'
 import { useRegisterStats } from '../lib/stats'
 import type { StatRow } from '../lib/stats'
 import { activityBegin, activityEnd } from '../lib/activity'
+import { reactMutate } from '../lib/reactions'
 import { SITE } from '../lib/site'
 import { fileSize } from '../lib/format'
 import { cn } from '../lib/cn'
 import MessageRow from './MessageRow'
-import type { ChatMessage, FileMeta, FileRef, Peer } from '../lib/types'
+import type { ChatMessage, FileMeta, FileRef, Peer, ReplyRef } from '../lib/types'
 
 const toneForIce = (s: RTCIceConnectionState) =>
   s === 'connected' || s === 'completed'
@@ -81,6 +88,11 @@ export default function ChatPane({
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
   const [body, setBody] = useState('')
+  const [selfId, setSelfId] = useState('me')
+  const [selfName, setSelfName] = useState(name)
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [recording, setRecording] = useState<MediaRecorder | null>(null)
   const [notify, setNotify] = useState<NotificationPermission>(() =>
     'Notification' in window ? Notification.permission : 'denied',
   )
@@ -216,6 +228,8 @@ export default function ChatPane({
       handlers: {
         onWelcome(self, roster) {
           selfRef.current = self
+          setSelfId(self.id)
+          setSelfName(self.name)
           // peers absent from a post-reconnect roster left during the
           // outage, report it the same as a live peer_left
           const gone = peersRef.current.filter((p) => !roster.some((r) => r.id === p.id))
@@ -273,6 +287,7 @@ export default function ChatPane({
             ts: ev.ts,
             ...(ev.body ? { body: ev.body } : {}),
             ...(ev.file ? { file: incomingFile(ev.file) } : {}),
+            ...(ev.reply ? { reply: ev.reply } : {}),
           }
           setMessages((prev) => {
             if (prev.some((x) => x.id === msg.id)) return prev
@@ -313,6 +328,18 @@ export default function ChatPane({
           } else {
             setTyping((t) => t.filter((x) => x.id !== peer.id))
           }
+        },
+        onDelete(_peer, id) {
+          tombstone(id)
+        },
+        onReact(peer, id, emoji, on) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? { ...m, reactions: reactMutate(m.reactions, emoji, peer.name, on) }
+                : m,
+            ),
+          )
         },
         onFileProgress(p) {
           if (p.dir === 'down') {
@@ -459,12 +486,122 @@ export default function ChatPane({
     if (!text) return
     const mesh = meshRef.current
     if (!mesh) return
-    const id = mesh.broadcastChat(text)
-    appendMessage({ id, peer: selfRef.current, body: text, ts: Date.now() })
+    const reply = replyTo ? replyRefOf(replyTo) : undefined
+    const id = mesh.broadcastChat(text, undefined, reply)
+    appendMessage({
+      id,
+      peer: selfRef.current,
+      body: text,
+      ts: Date.now(),
+      ...(reply ? { reply } : {}),
+    })
     pinnedRef.current = true
     mesh.broadcastTyping(false)
+    setReplyTo(null)
     setBody('')
     resetComposerHeight()
+  }
+
+  // replyRefOf embeds the quoted text in the frame; receivers never see
+  // the original message store because there is none
+  function replyRefOf(msg: ChatMessage): ReplyRef {
+    return {
+      id: msg.id,
+      name: msg.peer.name,
+      ...(msg.body ? { body: msg.body.slice(0, 200) } : {}),
+      ...(msg.file ? { file: msg.file.name } : {}),
+    }
+  }
+
+  // tombstone strips a message in place so scroll position holds
+  const tombstone = useCallback((id: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m
+        revokeFile(m.file)
+        return { id: m.id, peer: m.peer, ts: m.ts, deleted: true as const }
+      }),
+    )
+  }, [])
+
+  // stable callbacks keep the memoized rows from re-rendering
+  const onDeleteMsg = useCallback((msg: ChatMessage) => {
+    meshRef.current?.broadcastDelete(msg.id)
+    tombstone(msg.id)
+  }, [tombstone])
+
+  const onReactMsg = useCallback((msg: ChatMessage, emoji: string) => {
+    const mine = msg.reactions?.[emoji]?.includes(selfRef.current.name) ?? false
+    const on = !mine
+    meshRef.current?.broadcastReact(msg.id, emoji, on)
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msg.id
+          ? {
+              ...m,
+              reactions: reactMutate(m.reactions, emoji, selfRef.current.name, on),
+            }
+          : m,
+      ),
+    )
+  }, [])
+
+  const onCopyMsg = useCallback((msg: ChatMessage) => {
+    void navigator.clipboard.writeText(msg.body ?? '').catch(() => {})
+  }, [])
+
+  const onReplyMsg = useCallback((msg: ChatMessage) => {
+    setReplyTo(msg)
+    composerRef.current?.focus()
+  }, [])
+
+  function insertEmoji(e: string) {
+    const el = composerRef.current
+    const at = el ? el.selectionStart : body.length
+    const next = body.slice(0, at) + e + body.slice(el?.selectionEnd ?? at)
+    setBody(next)
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(at + e.length, at + e.length)
+    })
+  }
+
+  async function toggleRecord() {
+    if (recording) {
+      recording.stop()
+      setRecording(null)
+      return
+    }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setError('microphone unavailable')
+      return
+    }
+    const mime =
+      ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find((t) =>
+        MediaRecorder.isTypeSupported(t),
+      ) ?? ''
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+    const chunks: Blob[] = []
+    rec.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data)
+    }
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop())
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
+      // sub-kb blobs are accidental taps, not messages
+      if (blob.size > 1000) {
+        sendFiles([
+          new File([blob], `voice-${newNonce()}.webm`, {
+            type: rec.mimeType || 'audio/webm',
+          }),
+        ])
+      }
+    }
+    rec.start(250)
+    setRecording(rec)
   }
 
   function onBodyChange(v: string) {
@@ -683,7 +820,16 @@ export default function ChatPane({
             </p>
           )}
           {messages.map((m) => (
-            <MessageRow key={m.id} msg={m} />
+            <MessageRow
+              key={m.id}
+              msg={m}
+              self={m.peer.id === selfId}
+              selfName={selfName}
+              onReply={onReplyMsg}
+              onReact={onReactMsg}
+              onCopy={onCopyMsg}
+              onDelete={onDeleteMsg}
+            />
           ))}
           {typing.length > 0 && (
             <p className="text-xs text-muted-foreground" aria-live="off">
@@ -709,7 +855,26 @@ export default function ChatPane({
             {error}
           </p>
         )}
-        <div className="flex items-end gap-2">
+        {replyTo && (
+          <div className="flex items-center gap-2 pb-2 text-xs text-dim">
+            <CornerUpLeft className="size-3.5 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">
+              replying to{' '}
+              <span className="font-medium text-muted-foreground">
+                {replyTo.peer.name}
+              </span>
+              : {replyTo.body ?? replyTo.file?.name ?? 'message'}
+            </span>
+            <button
+              onClick={() => setReplyTo(null)}
+              aria-label="cancel reply"
+              className="rounded p-0.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </div>
+        )}
+        <div className="relative flex items-end gap-2">
           <input
             ref={fileRef}
             type="file"
@@ -727,6 +892,24 @@ export default function ChatPane({
             className="rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-50"
           >
             <Paperclip className="size-4" aria-hidden />
+          </button>
+          <button
+            onClick={toggleRecord}
+            aria-label={
+              recording ? 'stop and send voice message' : 'record voice message'
+            }
+            aria-pressed={Boolean(recording)}
+            title={recording ? 'stop and send' : 'record voice message'}
+            className={cn(
+              'rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground',
+              recording && 'border-destructive text-destructive',
+            )}
+          >
+            {recording ? (
+              <Square className="size-4 fill-current" aria-hidden />
+            ) : (
+              <Mic className="size-4" aria-hidden />
+            )}
           </button>
           <textarea
             ref={composerRef}
@@ -755,6 +938,18 @@ export default function ChatPane({
             autoComplete="off"
             className="min-w-0 flex-1 resize-none rounded-md border border-border bg-recessed px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
+          <button
+            onClick={() => setEmojiOpen((o) => !o)}
+            aria-label="emoji"
+            aria-expanded={emojiOpen}
+            title="emoji"
+            className="rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+          >
+            <Smile className="size-4" aria-hidden />
+          </button>
+          {emojiOpen && (
+            <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />
+          )}
           <button
             onClick={send}
             disabled={!body.trim()}

@@ -14,6 +14,7 @@ import Mark from '../components/Mark'
 import ErrorBoundary from '../components/ErrorBoundary'
 import ErrorView from '../components/ErrorView'
 import ChatPane from '../room/ChatPane'
+import ShareLink from '../room/ShareLink'
 import DebugPanel from '../room/DebugPanel'
 import StatsProvider from '../lib/StatsProvider'
 import { getRoom, livekitToken } from '../lib/api'
@@ -284,6 +285,7 @@ export default function RoomPage({ id }: { id: string }) {
             )}
             <span className="hidden sm:inline">{copied ? 'copied' : 'copy link'}</span>
           </button>
+          <ShareLink url={location.href} />
           <Link
             href="/"
             aria-label="leave room"
