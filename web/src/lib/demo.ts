@@ -88,8 +88,9 @@ export class DemoMesh implements ChatSession {
 
   connect() {
     this.after(CONNECT_MS, () => {
-      this.h.onConnected(true)
+      this.h.onConnectionState({ status: 'online', attempt: 0 })
       this.h.onWelcome(this.self, [...PEERS])
+      for (const p of PEERS) this.h.onPeerLink(p, 'open')
       this.playScript()
       this.ambient()
     })
@@ -214,6 +215,6 @@ export class DemoMesh implements ChatSession {
   close() {
     for (const t of this.timers) window.clearTimeout(t)
     this.timers = []
-    this.h.onConnected(false)
+    this.h.onConnectionState({ status: 'connecting', attempt: 0 })
   }
 }

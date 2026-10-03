@@ -1,5 +1,5 @@
 import { SignalingSocket, newNonce } from './signal'
-import type { SignalData, SignalEvent } from './signal'
+import type { SignalData, SignalEvent, SignalState } from './signal'
 import type { FileMeta, Peer } from './types'
 
 // Wire protocol on the 'chat' data channel (json, ordered, reliable).
@@ -33,6 +33,11 @@ export interface FileProgress {
   total: number
 }
 
+// PeerLink is the health of the direct datachannel to one peer, shown
+// as a status dot in the chat roster. It is independent of signaling:
+// open links keep working through a signaling outage.
+export type PeerLink = 'connecting' | 'open' | 'closed'
+
 export interface MeshHandlers {
   onWelcome: (self: Peer, peers: Peer[]) => void
   onPeerJoined: (peer: Peer) => void
@@ -42,7 +47,8 @@ export interface MeshHandlers {
   onFileProgress: (p: FileProgress) => void
   onFileDone: (fileId: string, msgId: string, peer: Peer, blob: Blob) => void
   onFileError: (fileId: string, msgId: string, peer: Peer, reason: string) => void
-  onConnected: (connected: boolean) => void
+  onConnectionState: (s: SignalState) => void
+  onPeerLink: (peer: Peer, link: PeerLink) => void
 }
 
 const CHUNK_BYTES = 16 << 10
@@ -108,6 +114,8 @@ export interface ChatSession {
   sendFile(file: Blob, meta: FileMeta, msgId: string): void
   /** per-peer link stats for the debug panel; demo sessions may omit */
   stats?(): Promise<PeerLinkStats[]>
+  /** skip reconnect backoff and redial signaling immediately */
+  reconnect?(): void
 }
 
 // Mesh maintains a full WebRTC datachannel mesh between room peers. The
@@ -124,11 +132,15 @@ export class Mesh implements ChatSession {
     this.opts = opts
     this.h = opts.handlers
     this.signal.onEvent = (e) => this.onSignalEvent(e)
-    this.signal.onStateChange = (c) => this.h.onConnected(c)
+    this.signal.onStateChange = (s) => this.h.onConnectionState(s)
   }
 
   connect() {
     this.signal.connect(this.opts.room, this.opts.name)
+  }
+
+  reconnect() {
+    this.signal.retryNow()
   }
 
   peerCount(): number {
@@ -248,6 +260,7 @@ export class Mesh implements ChatSession {
       in: new Map(),
     }
     this.conns.set(peer.id, p)
+    this.h.onPeerLink(peer, 'connecting')
     this.wirePeerConnection(p)
     if (initiator) {
       // creating the channel triggers onnegotiationneeded, which sends
@@ -283,7 +296,10 @@ export class Mesh implements ChatSession {
       })
     }
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed') pc.restartIce()
+      if (pc.iceConnectionState === 'failed') {
+        this.h.onPeerLink(p.peer, 'closed')
+        pc.restartIce()
+      }
     }
     pc.ondatachannel = (e) => {
       const ch = e.channel
@@ -361,6 +377,7 @@ export class Mesh implements ChatSession {
   private attachChatChannel(p: PeerConn, ch: RTCDataChannel) {
     ch.onopen = () => {
       p.chat = ch
+      this.h.onPeerLink(p.peer, 'open')
       const queued = p.chatQueue
       p.chatQueue = []
       for (const frame of queued) {
@@ -382,7 +399,10 @@ export class Mesh implements ChatSession {
       this.onWire(p, w)
     }
     ch.onclose = () => {
-      if (p.chat === ch) p.chat = null
+      if (p.chat === ch) {
+        p.chat = null
+        if (this.conns.has(p.peer.id)) this.h.onPeerLink(p.peer, 'closed')
+      }
     }
   }
 

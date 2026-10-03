@@ -30,6 +30,8 @@ export interface ChatMessage {
   ts: number
   /** local only: sending in progress */
   pending?: boolean
+  /** local only: presence line rendered as a system event, not a chat */
+  sys?: 'join' | 'leave'
 }
 
 export interface RoomInfo {

@@ -1,6 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
-import { Activity, Check, Copy, Dices, DoorOpen, Lock } from 'lucide-react'
+import {
+  Activity,
+  Check,
+  Copy,
+  Dices,
+  DoorOpen,
+  Lock,
+  MessageSquare,
+  Video,
+} from 'lucide-react'
 import Mark from '../components/Mark'
 import ErrorBoundary from '../components/ErrorBoundary'
 import ErrorView from '../components/ErrorView'
@@ -8,10 +17,12 @@ import ChatPane from '../room/ChatPane'
 import DebugPanel from '../room/DebugPanel'
 import StatsProvider from '../lib/StatsProvider'
 import { getRoom, livekitToken } from '../lib/api'
+import { cn } from '../lib/cn'
 import { keyFromHash, mediaE2EESupported } from '../lib/e2ee'
 import { randomName } from '../lib/names'
 import { SITE } from '../lib/site'
 import { useMediaQuery } from '../lib/useMedia'
+import { useVisualViewport } from '../lib/useViewport'
 import type { LiveKitGrant, RoomInfo } from '../lib/types'
 
 const Stage = lazy(() => import('../room/Stage'))
@@ -25,7 +36,26 @@ export default function RoomPage({ id }: { id: string }) {
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
   const [copied, setCopied] = useState(false)
   const [debug, setDebug] = useState(false)
+  const [joining, setJoining] = useState(false)
+  // small screens split attention between the stage and chat: focus
+  // picks which one gets the screen. chat stays mounted while hidden
+  // so messages keep arriving and the badge can count them
+  const [focus, setFocus] = useState<'chat' | 'stage'>('chat')
+  const [chatBadge, setChatBadge] = useState(0)
+  const vp = useVisualViewport()
   const closeDebug = useCallback(() => setDebug(false), [])
+  const onChatActivity = useCallback(() => {
+    setChatBadge((n) => n + 1)
+  }, [])
+  const focusChat = useCallback(() => {
+    setFocus('chat')
+    setChatBadge(0)
+  }, [])
+  const focusStage = useCallback(() => {
+    setFocus('stage')
+    // only count activity that arrives while the stage has the screen
+    setChatBadge(0)
+  }, [])
   // read once at mount: the fragment carries the shared media key and is
   // stable for the lifetime of the page
   const [e2eeKey] = useState(() => keyFromHash(location.hash))
@@ -82,16 +112,27 @@ export default function RoomPage({ id }: { id: string }) {
   async function join(e: React.FormEvent) {
     e.preventDefault()
     const n = name.trim()
-    if (!n) return
+    if (!n || joining) return
+    setJoining(true)
     localStorage.setItem('qc-name', n)
-    if (info?.livekit) {
-      try {
-        setGrant(await livekitToken(id, n))
-      } catch {
-        // chat still works without av
+    try {
+      // room info can still be in flight; fetch it so a fast join does
+      // not misreport the room as having no live av
+      const room = info ?? (await getRoom(id))
+      setInfo(room)
+      if (room.livekit) {
+        try {
+          setGrant(await livekitToken(id, n))
+        } catch {
+          // chat still works without av
+        }
       }
+      setJoined(true)
+    } catch {
+      setError('room not found')
+    } finally {
+      setJoining(false)
     }
-    setJoined(true)
   }
 
   function copyLink() {
@@ -154,9 +195,10 @@ export default function RoomPage({ id }: { id: string }) {
           </div>
           <button
             type="submit"
-            className="mt-3 w-full rounded-md bg-inverted px-3 py-2 text-sm font-semibold text-inverted-foreground shadow-sm hover:opacity-90"
+            disabled={joining || !name.trim()}
+            className="mt-3 w-full rounded-md bg-inverted px-3 py-2.5 text-sm font-semibold text-inverted-foreground shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            join room
+            {joining ? 'joining...' : 'join room'}
           </button>
         </form>
       </main>
@@ -165,13 +207,28 @@ export default function RoomPage({ id }: { id: string }) {
 
   return (
     <StatsProvider>
-      <div className="flex h-full flex-col">
-        <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-          <Link href="/" className="flex items-center gap-2 text-emphasis">
+      <div
+        className="flex h-full flex-col"
+        style={
+          vp
+            ? { height: `${vp.height}px`, transform: `translateY(${vp.offsetTop}px)` }
+            : undefined
+        }
+      >
+        <header className="flex items-center gap-2 border-b border-border px-3 py-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] sm:gap-3 sm:px-4">
+          <Link
+            href="/"
+            aria-label={SITE.name}
+            className="flex items-center gap-2 text-emphasis"
+          >
             <Mark size={20} />
-            <span className="text-sm font-semibold tracking-tight">{SITE.name}</span>
+            <span className="hidden text-sm font-semibold tracking-tight sm:inline">
+              {SITE.name}
+            </span>
           </Link>
-          <h1 className="font-mono text-xs font-normal text-muted-foreground">{id}</h1>
+          <h1 className="min-w-0 truncate font-mono text-xs font-normal text-muted-foreground">
+            {id}
+          </h1>
           {e2eeKey && mediaE2EESupported() && (
             <span
               className="flex items-center gap-1 font-mono text-[10px] text-success"
@@ -183,6 +240,23 @@ export default function RoomPage({ id }: { id: string }) {
           )}
           <div className="flex-1" />
           <button
+            onClick={focus === 'chat' ? focusStage : focusChat}
+            aria-label={focus === 'chat' ? 'show stage' : 'show chat'}
+            title={focus === 'chat' ? 'show stage' : 'show chat'}
+            className="relative rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground md:hidden"
+          >
+            {focus === 'chat' ? (
+              <Video className="size-3.5" aria-hidden />
+            ) : (
+              <MessageSquare className="size-3.5" aria-hidden />
+            )}
+            {focus === 'stage' && chatBadge > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex min-w-4 items-center justify-center rounded-full bg-inverted px-1 font-mono text-[9px] font-bold leading-4 text-inverted-foreground">
+                {chatBadge > 99 ? '99+' : chatBadge}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setDebug(!debug)}
             aria-label="connection stats"
             aria-pressed={debug}
@@ -193,6 +267,7 @@ export default function RoomPage({ id }: { id: string }) {
           </button>
           <button
             onClick={copyLink}
+            aria-label="copy room link"
             className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
           >
             {copied ? (
@@ -200,19 +275,26 @@ export default function RoomPage({ id }: { id: string }) {
             ) : (
               <Copy className="size-3.5" />
             )}
-            {copied ? 'copied' : 'copy link'}
+            <span className="hidden sm:inline">{copied ? 'copied' : 'copy link'}</span>
           </button>
           <Link
             href="/"
+            aria-label="leave room"
             className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
           >
             <DoorOpen className="size-3.5" />
-            leave
+            <span className="hidden sm:inline">leave</span>
           </Link>
         </header>
 
         <div className="relative flex min-h-0 flex-1 flex-col md:flex-row">
-          <main id="main" className="min-h-0 min-w-0 flex-1">
+          <main
+            id="main"
+            className={cn(
+              'min-h-0 min-w-0',
+              focus === 'stage' ? 'flex-1' : 'flex-none md:flex-1',
+            )}
+          >
             {grant ? (
               // a media crash must not take down chat: the panel boundary
               // confines it and retry remounts the livekit room
@@ -231,12 +313,13 @@ export default function RoomPage({ id }: { id: string }) {
                     e2eeKey={e2eeKey}
                     onDebug={() => setDebug(!debug)}
                     debugOpen={debug}
+                    compact={!isMd && focus === 'chat'}
                   />
                 </Suspense>
               </ErrorBoundary>
             ) : (
-              <div className="flex h-full items-center justify-center p-6">
-                <p className="text-sm text-muted-foreground">
+              <div className="flex h-full items-center justify-center p-3 md:p-6">
+                <p className="text-center text-sm text-muted-foreground">
                   {info?.livekit
                     ? 'connecting to voice...'
                     : 'voice and video unavailable on this server'}
@@ -248,7 +331,10 @@ export default function RoomPage({ id }: { id: string }) {
             ref={asideRef}
             aria-label="chat"
             style={isMd ? { width: `${chatW}px` } : undefined}
-            className="relative flex min-h-0 w-full flex-1 flex-col border-t border-border md:w-auto md:flex-none md:border-l md:border-t-0"
+            className={cn(
+              'relative min-h-0 w-full flex-col border-t border-border md:flex md:w-auto md:flex-none md:border-l md:border-t-0',
+              focus === 'stage' ? 'hidden' : 'flex flex-1',
+            )}
           >
             <div
               role="separator"
@@ -279,6 +365,7 @@ export default function RoomPage({ id }: { id: string }) {
                   name={name.trim() || 'anon'}
                   iceServers={info.iceServers ?? []}
                   maxFileSize={info.maxFileSize}
+                  onChatActivity={onChatActivity}
                 />
               </ErrorBoundary>
             )}

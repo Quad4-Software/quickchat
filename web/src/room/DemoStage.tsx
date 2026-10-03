@@ -17,6 +17,7 @@ import {
 import { cn } from '../lib/cn'
 import { gridLayout } from '../lib/grid'
 import { useElementSize } from '../lib/useElementSize'
+import { useMediaQuery } from '../lib/useMedia'
 
 // demo stage renders seeded participants from generated canvas streams, so
 // tiles are real video elements: picture in picture and fullscreen work
@@ -225,11 +226,15 @@ function Tile({
 
 const toggleClass = cn(
   'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
+  // coarse pointers get a taller hit area without changing desktop density
+  'max-sm:px-4 max-sm:py-3',
   'text-sm font-medium text-muted-foreground hover:bg-hover hover:text-foreground',
   'aria-pressed:border-border-strong aria-pressed:text-emphasis',
 )
 
 export default function DemoStage() {
+  // small screens get the compact strip so the demo chat keeps the page
+  const compact = !useMediaQuery('(min-width: 768px)')
   const [mic, setMic] = useState(true)
   const [cam, setCam] = useState(true)
   const [sharing, setSharing] = useState(true)
@@ -280,7 +285,7 @@ export default function DemoStage() {
 
   return (
     <div ref={rootRef} className="flex min-h-0 flex-1 flex-col bg-background">
-      <div ref={gridRef} className="min-h-0 flex-1 p-3 sm:p-4">
+      <div ref={gridRef} className={cn('min-h-0 flex-1', compact ? 'p-2' : 'p-3 sm:p-4')}>
         {featured ? (
           <div className="flex h-full flex-col gap-3">
             <div className="min-h-0 flex-1">
@@ -292,7 +297,7 @@ export default function DemoStage() {
               />
             </div>
             {rest.length > 0 && (
-              <div className="flex gap-3 overflow-x-auto pb-1">
+              <div className="qc-scroll flex gap-3 overflow-x-auto pb-1">
                 {rest.map((t) => (
                   <Tile
                     key={t.id}
@@ -304,6 +309,18 @@ export default function DemoStage() {
                 ))}
               </div>
             )}
+          </div>
+        ) : compact ? (
+          <div className="qc-scroll flex gap-2 overflow-x-auto pb-1">
+            {tiles.map((t) => (
+              <Tile
+                key={t.id}
+                tile={t}
+                strip
+                speaking={speaking === t.name && t.kind === 'cam'}
+                camOff={t.id === 'you' && !cam}
+              />
+            ))}
           </div>
         ) : (
           <div
@@ -326,7 +343,7 @@ export default function DemoStage() {
           </div>
         )}
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3">
+      <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <button
           onClick={() => setMic(!mic)}
           aria-label="microphone"

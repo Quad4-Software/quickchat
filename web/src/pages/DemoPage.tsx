@@ -10,12 +10,14 @@ import DemoStage from '../room/DemoStage'
 import { DemoMesh } from '../lib/demo'
 import { SITE } from '../lib/site'
 import { useMediaQuery } from '../lib/useMedia'
+import { useVisualViewport } from '../lib/useViewport'
 
 const DEMO_MAX_FILE = 64 << 20
 
 export default function DemoPage() {
   const asideRef = useRef<HTMLElement>(null)
   const isMd = useMediaQuery('(min-width: 768px)')
+  const vp = useVisualViewport()
   const [chatW, setChatW] = useState(() => {
     const v = Number(localStorage.getItem('qc-chat-w'))
     return v >= 240 && v <= 720 ? v : 320
@@ -50,9 +52,16 @@ export default function DemoPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      style={
+        vp
+          ? { height: `${vp.height}px`, transform: `translateY(${vp.offsetTop}px)` }
+          : undefined
+      }
+    >
       <DemoBadge />
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+      <header className="flex items-center gap-3 border-b border-border px-3 py-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] sm:px-4">
         <Link href="/" className="flex items-center gap-2 text-emphasis">
           <Mark size={20} />
           <h1 className="text-sm font-semibold tracking-tight">{SITE.name}</h1>
@@ -60,15 +69,16 @@ export default function DemoPage() {
         <div className="flex-1" />
         <Link
           href="/"
+          aria-label="leave"
           className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
         >
           <DoorOpen className="size-3.5" />
-          leave
+          <span className="hidden sm:inline">leave</span>
         </Link>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <main id="main" className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main id="main" className="flex min-h-0 min-w-0 flex-none flex-col md:flex-1">
           <ErrorBoundary variant="panel" label="voice and video">
             <DemoStage />
           </ErrorBoundary>

@@ -14,15 +14,22 @@ import {
   ExternalE2EEKeyProvider,
   isE2EESupported,
   MediaDeviceFailure,
+  ParticipantEvent,
   RemoteAudioTrack,
   RoomEvent,
   Track,
 } from 'livekit-client'
-import type { RemoteParticipant, RoomOptions } from 'livekit-client'
+import type {
+  ConnectionState,
+  Participant,
+  RemoteParticipant,
+  RoomOptions,
+} from 'livekit-client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   LayoutGrid,
+  LoaderCircle,
   Lock,
   Maximize,
   Mic,
@@ -31,6 +38,8 @@ import {
   MonitorUp,
   PhoneOff,
   PictureInPicture2,
+  SignalLow,
+  SignalZero,
   UserRound,
   Video,
   Volume2,
@@ -56,11 +65,15 @@ export default function Stage({
   e2eeKey,
   onDebug,
   debugOpen,
+  compact,
 }: {
   grant: LiveKitGrant
   e2eeKey?: string | null
   onDebug?: (() => void) | undefined
   debugOpen?: boolean | undefined
+  // compact collapses the stage to a tile strip so chat keeps the
+  // screen on small viewports; the parent decides when to apply it
+  compact?: boolean | undefined
 }) {
   // the key arrives via URL fragment and is set once; it never reaches the
   // server. webAudioMix routes remote tracks through sdk-managed gain
@@ -107,7 +120,12 @@ export default function Stage({
           this browser cannot do media e2ee; media is dtls-srtp only
         </p>
       )}
-      <StageInner serverUrl={grant.url} onDebug={onDebug} debugOpen={debugOpen} />
+      <StageInner
+        serverUrl={grant.url}
+        onDebug={onDebug}
+        debugOpen={debugOpen}
+        compact={compact}
+      />
       <RoomAudioRenderer />
     </LiveKitRoom>
   )
@@ -126,10 +144,12 @@ function StageInner({
   serverUrl,
   onDebug,
   debugOpen,
+  compact,
 }: {
   serverUrl: string
   onDebug?: (() => void) | undefined
   debugOpen?: boolean | undefined
+  compact?: boolean | undefined
 }) {
   const room = useRoomContext()
   const tracks = useTracks([
@@ -139,6 +159,9 @@ function StageInner({
   const [view, setView] = useState<View>('grid')
   const [fullscreen, setFullscreen] = useState(false)
   const [mediaError, setMediaError] = useState('')
+  const [roomState, setRoomState] = useState<ConnectionState>(room.state)
+  // a disconnect only deserves an alarm after a session existed
+  const [wasConnected, setWasConnected] = useState(room.state === 'connected')
   const rootRef = useRef<HTMLDivElement>(null)
   const [gridRef, gridSize] = useElementSize<HTMLDivElement>()
   const prevBytes = useRef(new Map<string, { bytes: number; ts: number }>())
@@ -229,6 +252,18 @@ function StageInner({
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
+
+  // livekit reconnects on its own; the banner just makes that visible
+  useEffect(() => {
+    const on = (s: ConnectionState) => {
+      if (s === 'connected') setWasConnected(true)
+      setRoomState(s)
+    }
+    room.on(RoomEvent.ConnectionStateChanged, on)
+    return () => {
+      room.off(RoomEvent.ConnectionStateChanged, on)
+    }
+  }, [room])
 
   useEffect(() => {
     const onErr = (err: Error, kind?: MediaDeviceKind) => {
@@ -390,6 +425,30 @@ function StageInner({
 
   return (
     <div ref={rootRef} className="flex min-h-0 flex-1 flex-col bg-background">
+      {roomState !== 'connected' && (roomState !== 'disconnected' || wasConnected) && (
+        <div
+          role="status"
+          className={cn(
+            'flex items-center gap-2 border-b border-border bg-card px-4 py-1.5 text-xs',
+            roomState === 'disconnected'
+              ? 'text-destructive'
+              : roomState === 'connecting'
+                ? 'text-muted-foreground'
+                : 'text-warning',
+          )}
+        >
+          {roomState === 'disconnected' ? (
+            <SignalZero className="size-3.5 shrink-0" aria-hidden />
+          ) : (
+            <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
+          )}
+          {roomState === 'connecting'
+            ? 'connecting to voice and video'
+            : roomState === 'disconnected'
+              ? 'disconnected from voice and video'
+              : 'media connection lost, reconnecting'}
+        </div>
+      )}
       {mediaError && (
         <div
           role="alert"
@@ -405,16 +464,23 @@ function StageInner({
           </button>
         </div>
       )}
-      <div ref={gridRef} className="min-h-0 flex-1 p-3 sm:p-4">
+      <div ref={gridRef} className={cn('min-h-0 flex-1', compact ? 'p-2' : 'p-3 sm:p-4')}>
         {tracks.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <span className="flex size-14 items-center justify-center rounded-full border border-border bg-card">
-              <UserRound className="size-6 text-muted-foreground" aria-hidden />
-            </span>
-            <p className="text-sm text-muted-foreground">
-              nobody here yet. share the link.
+          compact ? (
+            <p className="flex items-center gap-2 py-1 text-xs text-dim">
+              <UserRound className="size-4 shrink-0" aria-hidden />
+              nobody here yet, share the link
             </p>
-          </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+              <span className="flex size-14 items-center justify-center rounded-full border border-border bg-card">
+                <UserRound className="size-6 text-muted-foreground" aria-hidden />
+              </span>
+              <p className="text-sm text-muted-foreground">
+                nobody here yet. share the link.
+              </p>
+            </div>
+          )
         ) : featured ? (
           <div className="flex h-full flex-col gap-3">
             <div className="min-h-0 flex-1">
@@ -430,7 +496,7 @@ function StageInner({
               />
             </div>
             {rest.length > 0 && (
-              <div className="flex gap-3 overflow-x-auto pb-1">
+              <div className="qc-scroll flex gap-3 overflow-x-auto pb-1">
                 {rest.map((t) => (
                   <Tile
                     key={`${t.participant.identity}-${t.source}`}
@@ -446,6 +512,24 @@ function StageInner({
                 ))}
               </div>
             )}
+          </div>
+        ) : compact ? (
+          // compact mode: a single horizontally scrollable tile strip
+          // keeps the stage slim instead of squeezing a grid
+          <div className="qc-scroll flex gap-2 overflow-x-auto pb-1">
+            {tracks.map((t) => (
+              <Tile
+                key={`${t.participant.identity}-${t.source}`}
+                track={t}
+                strip
+                volume={volumes[t.participant.identity] ?? 1}
+                onVolume={
+                  t.participant.isLocal
+                    ? undefined
+                    : (v) => setVolume(t.participant.identity, v)
+                }
+              />
+            ))}
           </div>
         ) : (
           <div
@@ -487,6 +571,21 @@ function StageInner({
   )
 }
 
+// livekit recomputes connection quality continuously; subscribe so a
+// degrading link is visible on the tile instead of only in the debug
+// panel
+function useConnectionQuality(p: Participant) {
+  const [q, setQ] = useState(p.connectionQuality)
+  useEffect(() => {
+    const on = () => setQ(p.connectionQuality)
+    p.on(ParticipantEvent.ConnectionQualityChanged, on)
+    return () => {
+      p.off(ParticipantEvent.ConnectionQualityChanged, on)
+    }
+  }, [p])
+  return q
+}
+
 function Tile({
   track,
   featured,
@@ -501,6 +600,7 @@ function Tile({
   onVolume?: ((v: number) => void) | undefined
 }) {
   const speaking = useIsSpeaking(track.participant)
+  const quality = useConnectionQuality(track.participant)
   const isScreen = track.source === Track.Source.ScreenShare
   const hasVideo = isTrackReference(track)
   const tileRef = useRef<HTMLDivElement>(null)
@@ -560,6 +660,12 @@ function Tile({
         </span>
         {!track.participant.isMicrophoneEnabled && (
           <MicOff className="size-3 text-destructive" aria-label="muted" />
+        )}
+        {quality === 'poor' && (
+          <SignalLow className="size-3 text-warning" aria-label="poor connection" />
+        )}
+        {quality === 'lost' && (
+          <SignalZero className="size-3 text-destructive" aria-label="connection lost" />
         )}
         {isScreen && <MonitorUp className="size-3 text-muted-foreground" />}
       </div>
@@ -643,6 +749,8 @@ function Tile({
 
 const toggleClass = cn(
   'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
+  // coarse pointers get a taller hit area without changing desktop density
+  'max-sm:px-4 max-sm:py-3',
   'text-sm font-medium text-muted-foreground hover:bg-hover hover:text-foreground',
   'aria-pressed:border-border-strong aria-pressed:text-emphasis',
 )
@@ -663,7 +771,7 @@ function Controls({
   debugOpen?: boolean | undefined
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3">
+    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
         <Mic className="size-4" aria-hidden />
         <span className="sr-only">microphone</span>

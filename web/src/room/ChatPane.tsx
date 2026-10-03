@@ -4,12 +4,15 @@ import {
   Bell,
   BellOff,
   BellRing,
+  LoaderCircle,
   Paperclip,
   SendHorizonal,
   Users,
+  WifiOff,
 } from 'lucide-react'
 import { Mesh, newNonce } from '../lib/mesh'
-import type { ChatSession, MeshOptions } from '../lib/mesh'
+import type { ChatSession, MeshOptions, PeerLink } from '../lib/mesh'
+import type { SignalState } from '../lib/signal'
 import { useRegisterStats } from '../lib/stats'
 import type { StatRow } from '../lib/stats'
 import { activityBegin, activityEnd } from '../lib/activity'
@@ -40,12 +43,25 @@ function bumpTitle() {
   document.title = `(${n}) ${SITE.name}`
 }
 
+// presence changes land in the log as quiet system lines so the room
+// history explains itself
+function sysLine(peer: Peer, kind: 'join' | 'leave'): ChatMessage {
+  return {
+    id: `sys-${peer.id}-${newNonce()}`,
+    peer,
+    sys: kind,
+    body: kind === 'join' ? 'joined' : 'left',
+    ts: Date.now(),
+  }
+}
+
 export default function ChatPane({
   room,
   name,
   iceServers,
   maxFileSize,
   createSession,
+  onChatActivity,
 }: {
   room: string
   name: string
@@ -53,11 +69,14 @@ export default function ChatPane({
   maxFileSize: number
   // defaults to the real webrtc mesh; demo mode injects a scripted one
   createSession?: (opts: MeshOptions) => ChatSession
+  // fired for each remote chat event so a collapsed parent can badge
+  onChatActivity?: (() => void) | undefined
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
   const [typing, setTyping] = useState<Peer[]>([])
-  const [connected, setConnected] = useState(false)
+  const [conn, setConn] = useState<SignalState>({ status: 'connecting', attempt: 0 })
+  const [links, setLinks] = useState<Record<string, PeerLink>>({})
   const [unread, setUnread] = useState(0)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -68,14 +87,21 @@ export default function ChatPane({
 
   const meshRef = useRef<ChatSession | null>(null)
   const selfRef = useRef<Peer>({ id: 'me', name })
+  // roster mirror for diffs inside handlers, where setPeers functional
+  // updates cannot carry side effects
+  const peersRef = useRef<Peer[]>([])
 
   // per-peer p2p link stats for the debug panel
   useRegisterStats('p2p mesh', async () => {
     const rows: StatRow[] = [
       {
         label: 'signaling',
-        value: connected ? 'online' : 'reconnecting',
-        tone: connected ? 'ok' : 'warn',
+        value:
+          conn.status === 'reconnecting' && conn.attempt > 1
+            ? `reconnecting (${conn.attempt})`
+            : conn.status,
+        tone:
+          conn.status === 'online' ? 'ok' : conn.status === 'offline' ? 'bad' : 'warn',
       },
       { label: 'peers', value: String(peers.length) },
     ]
@@ -190,14 +216,34 @@ export default function ChatPane({
       handlers: {
         onWelcome(self, roster) {
           selfRef.current = self
+          // peers absent from a post-reconnect roster left during the
+          // outage; report it the same as a live peer_left
+          const gone = peersRef.current.filter((p) => !roster.some((r) => r.id === p.id))
+          peersRef.current = roster
           setPeers(roster)
+          const ids = new Set(roster.map((p) => p.id))
+          setLinks((l) =>
+            Object.fromEntries(Object.entries(l).filter(([k]) => ids.has(k))),
+          )
+          for (const p of gone) appendMessage(sysLine(p, 'leave'))
         },
         onPeerJoined(peer) {
+          peersRef.current = peersRef.current.some((x) => x.id === peer.id)
+            ? peersRef.current
+            : [...peersRef.current, peer]
           setPeers((p) => (p.some((x) => x.id === peer.id) ? p : [...p, peer]))
+          appendMessage(sysLine(peer, 'join'))
         },
         onPeerLeft(peer) {
+          peersRef.current = peersRef.current.filter((x) => x.id !== peer.id)
           setPeers((p) => p.filter((x) => x.id !== peer.id))
           setTyping((t) => t.filter((x) => x.id !== peer.id))
+          setLinks((l) => {
+            const next = { ...l }
+            delete next[peer.id]
+            return next
+          })
+          appendMessage(sysLine(peer, 'leave'))
           // drop the departed peer from upload denominators
           const affected = [...upProgress.current.keys()].filter((k) =>
             upProgress.current.get(k)?.has(peer.id),
@@ -236,6 +282,7 @@ export default function ChatPane({
             return next
           })
           if (!pinnedRef.current) setUnread((n) => n + 1)
+          if (ev.peer.id !== selfRef.current.id) onChatActivity?.()
           if (document.hidden) {
             bumpTitle()
             if (
@@ -299,7 +346,10 @@ export default function ChatPane({
           doneFiles.current.set(fileId, reason)
           mutateFile(msgId, (f) => ({ ...f, progress: undefined, failed: reason }))
         },
-        onConnected: setConnected,
+        onConnectionState: setConn,
+        onPeerLink(peer, link) {
+          setLinks((l) => ({ ...l, [peer.id]: link }))
+        },
       },
     })
     mesh.connect()
@@ -496,15 +546,32 @@ export default function ChatPane({
       )}
 
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-        <Users className="size-4 text-muted-foreground" aria-hidden />
-        <span className="font-mono text-xs text-muted-foreground">
+        <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="shrink-0 font-mono text-xs text-muted-foreground">
           {peers.length + 1} online
         </span>
         <span
           className="min-w-0 flex-1 truncate text-xs text-dim"
           title={peers.map((p) => p.name).join(', ')}
         >
-          {peers.map((p) => p.name).join(', ')}
+          {peers.map((p, i) => (
+            <span key={p.id}>
+              {i > 0 && ', '}
+              <span
+                className={cn(
+                  'inline-block size-1.5 rounded-full align-middle',
+                  links[p.id] === 'open'
+                    ? 'bg-success'
+                    : links[p.id] === 'connecting'
+                      ? 'bg-warning'
+                      : 'bg-destructive',
+                )}
+                title={`${p.name}: ${links[p.id] ?? 'no link'}`}
+                aria-hidden
+              />{' '}
+              {p.name}
+            </span>
+          ))}
         </span>
         {'Notification' in window && (
           <button
@@ -540,13 +607,57 @@ export default function ChatPane({
         <span
           role="status"
           className={cn(
-            'shrink-0 font-mono text-[10px]',
-            connected ? 'text-success' : 'text-destructive',
+            'flex shrink-0 items-center gap-1 font-mono text-[10px]',
+            conn.status === 'online'
+              ? 'text-success'
+              : conn.status === 'offline'
+                ? 'text-destructive'
+                : 'text-warning',
           )}
         >
-          {connected ? 'online' : 'reconnecting'}
+          {conn.status !== 'online' &&
+            (conn.status === 'offline' ? (
+              <WifiOff className="size-3" aria-hidden />
+            ) : (
+              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+            ))}
+          {conn.status}
         </span>
       </div>
+
+      {conn.status !== 'online' && (
+        <div
+          role="status"
+          className={cn(
+            'flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs',
+            conn.status === 'offline' ? 'text-destructive' : 'text-warning',
+          )}
+        >
+          {conn.status === 'offline' ? (
+            <WifiOff className="size-3.5 shrink-0" aria-hidden />
+          ) : (
+            <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
+          )}
+          <span className="min-w-0 flex-1">
+            {conn.status === 'offline'
+              ? 'you are offline'
+              : conn.status === 'reconnecting'
+                ? `connection lost, retrying${conn.attempt > 1 ? ` (${conn.attempt})` : ''}`
+                : 'connecting to server'}
+            {conn.status === 'reconnecting' &&
+              Object.values(links).some((l) => l === 'open') &&
+              '. open peer links still deliver'}
+          </span>
+          {(conn.status === 'reconnecting' || conn.status === 'offline') && (
+            <button
+              onClick={() => meshRef.current?.reconnect?.()}
+              className="shrink-0 rounded-md border border-border bg-card px-2 py-0.5 font-medium text-foreground hover:bg-hover"
+            >
+              retry
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="relative min-h-0 flex-1">
         <div
@@ -555,7 +666,7 @@ export default function ChatPane({
           role="log"
           aria-live="polite"
           aria-label="chat messages"
-          className="h-full space-y-3 overflow-y-auto px-3 py-3"
+          className="qc-scroll h-full space-y-3 overflow-y-auto overscroll-contain px-3 py-3"
         >
           {messages.length === 0 && (
             <p className="pt-8 text-center text-xs text-dim">
@@ -583,7 +694,7 @@ export default function ChatPane({
         )}
       </div>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         {error && (
           <p role="alert" className="pb-2 text-xs text-destructive">
             {error}
@@ -604,7 +715,7 @@ export default function ChatPane({
             onClick={() => fileRef.current?.click()}
             aria-label="send file"
             title="send file peer to peer (or paste / drop)"
-            className="rounded-md border border-border bg-card p-2 text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-50"
+            className="rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-50"
           >
             <Paperclip className="size-4" aria-hidden />
           </button>
@@ -628,14 +739,18 @@ export default function ChatPane({
             title="enter to send, / to focus"
             aria-label="message"
             rows={1}
-            autoFocus
-            className="min-w-0 flex-1 resize-none rounded-md border border-border bg-recessed px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring/30"
+            // on touch devices autofocus pops the on-screen keyboard and
+            // covers the chat right after joining; keep it to mice
+            autoFocus={!matchMedia('(pointer: coarse)').matches}
+            enterKeyHint="send"
+            autoComplete="off"
+            className="min-w-0 flex-1 resize-none rounded-md border border-border bg-recessed px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
           <button
             onClick={send}
             disabled={!body.trim()}
             aria-label="send message"
-            className="rounded-md bg-inverted p-2 text-inverted-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-inverted p-2.5 text-inverted-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <SendHorizonal className="size-4" aria-hidden />
           </button>

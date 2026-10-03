@@ -4,6 +4,15 @@ import { cn } from '../lib/cn'
 import type { ChatMessage, FileRef } from '../lib/types'
 
 export default function MessageRow({ msg }: { msg: ChatMessage }) {
+  if (msg.sys) {
+    return (
+      <p className="text-center text-[11px] text-dim">
+        <span className="font-medium text-muted-foreground">{msg.peer.name}</span>{' '}
+        {msg.body}
+        <span className="font-mono"> - {timestamp(msg.ts)}</span>
+      </p>
+    )
+  }
   return (
     <div className={cn('min-w-0', msg.pending && 'opacity-50')}>
       <div className="flex items-baseline gap-2">

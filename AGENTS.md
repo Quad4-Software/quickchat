@@ -61,8 +61,11 @@ Software.
     web/src/pages/       HomePage, RoomPage, DemoPage, DocsPage (scalar, lazy)
     web/src/room/        Stage (livekit av), DemoStage, ChatPane, MessageRow,
                          DebugPanel (rtc stats overlay)
-    web/src/lib/signal.ts   ws client: presence + signal relay only
+    web/src/lib/signal.ts   ws client: presence + signal relay only,
+                            reconnect state machine + offline detection
     web/src/lib/mesh.ts     webrtc datachannel mesh: chat, typing, files
+    web/src/lib/useViewport.ts  visualViewport tracking for the ios
+                            software keyboard (100dvh does not shrink)
     web/src/lib/stats.ts    debug panel collector registry + hooks
     web/src/lib/StatsProvider.tsx  stats registry provider component
     web/src/lib/pwa.ts      service worker registration + update flow
@@ -122,6 +125,18 @@ Software.
   use import.meta.env.BASE_URL so they resolve under a pages subpath.
 - #root is locked to 100dvh with document overflow hidden; every region
   scrolls internally, never the page. Keep room panels min-h-0.
+- Mobile room layout (<md): the stage collapses to a compact tile strip
+  above the chat (Stage compact prop). A header toggle flips focus
+  between chat and a full stage, badging unread chat while hidden. The
+  composer autofocus is disabled on coarse pointers; enterKeyHint=send
+  gives the mobile keyboard a send key. Safe area insets pad the
+  header, controls bar, and composer.
+- Signaling reports a state machine (connecting/online/reconnecting/
+  offline with attempt count) instead of a boolean. Chat surfaces it as
+  a header pill plus a banner with a retry button; per-peer datachannel
+  health shows as colored dots next to names. Peer join/leave lands in
+  the log as system lines. Media connection state and per-participant
+  connection quality surface on the stage and tiles the same way.
 - Playwright runs four projects: chromium desktop+mobile, firefox,
   webkit. live.test.ts activates only when LIVEKIT_URL is set. WebKit
   headless cannot resolve its own mdns ice candidates, so p2p mesh specs
