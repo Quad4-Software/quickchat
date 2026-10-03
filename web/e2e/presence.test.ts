@@ -3,14 +3,17 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 async function createRoom(page: Page): Promise<string> {
-  await page.goto('/')
+  // commit, not load or domcontentloaded: firefox intermittently
+  // stalls the navigation waiter though the page fully renders;
+  // assertions wait on rendered elements anyway
+  await page.goto('/', { waitUntil: 'commit' })
   await page.getByRole('button', { name: 'new room' }).click()
   await expect(page).toHaveURL(/\/r\/[a-z0-9]+#e2ee=[A-Za-z0-9_-]+/)
   return page.url()
 }
 
 async function join(page: Page, url: string, name: string) {
-  await page.goto(url)
+  await page.goto(url, { waitUntil: 'commit' })
   await page.getByLabel('display name').fill(name)
   await page.getByRole('button', { name: 'join room' }).click()
   await expect(page.getByRole('log')).toBeVisible()

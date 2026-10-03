@@ -3,21 +3,24 @@ import type { Page } from '@playwright/test'
 import { AxeBuilder } from '@axe-core/playwright'
 
 async function createRoom(page: Page): Promise<string> {
-  await page.goto('/')
+  // commit, not load or domcontentloaded: firefox intermittently
+  // stalls the navigation waiter though the page fully renders;
+  // assertions wait on rendered elements anyway
+  await page.goto('/', { waitUntil: 'commit' })
   await page.getByRole('button', { name: 'new room' }).click()
   await expect(page).toHaveURL(/\/r\/[a-z0-9]+#e2ee=[A-Za-z0-9_-]+/)
   return page.url()
 }
 
 async function join(page: Page, url: string, name: string) {
-  await page.goto(url)
+  await page.goto(url, { waitUntil: 'commit' })
   await page.getByLabel('display name').fill(name)
   await page.getByRole('button', { name: 'join room' }).click()
   await expect(page.getByRole('log')).toBeVisible()
 }
 
 test('home page renders and passes axe', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/', { waitUntil: 'commit' })
   await expect(page.getByRole('heading', { name: 'quickchat' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'new room' })).toBeVisible()
 
@@ -156,12 +159,12 @@ test('slash key focuses the composer', async ({ page }) => {
 })
 
 test('room not found shows error state', async ({ page }) => {
-  await page.goto('/r/zzzzzzzzzz')
+  await page.goto('/r/zzzzzzzzzz', { waitUntil: 'commit' })
   await expect(page.getByText('room not found')).toBeVisible()
 })
 
 test('unknown route renders the 404 page', async ({ page }) => {
-  await page.goto('/no-such-page')
+  await page.goto('/no-such-page', { waitUntil: 'commit' })
   await expect(page.getByText('404')).toBeVisible()
   await expect(page.getByText('page not found')).toBeVisible()
   await page.getByRole('link', { name: 'home' }).click()
@@ -169,14 +172,14 @@ test('unknown route renders the 404 page', async ({ page }) => {
 })
 
 test('a render crash shows the boundary and navigation recovers', async ({ page }) => {
-  await page.goto('/crash')
+  await page.goto('/crash', { waitUntil: 'commit' })
   await expect(page.getByText('something broke')).toBeVisible()
   await expect(page.getByText('crash probe')).toBeVisible()
   // navigating away resets the boundary without a reload
   await page.getByRole('link', { name: 'home' }).click()
   await expect(page.getByRole('button', { name: 'new room' })).toBeVisible()
   // the boundary also resets on a fresh visit after a crash
-  await page.goto('/crash')
+  await page.goto('/crash', { waitUntil: 'commit' })
   await expect(page.getByText('something broke')).toBeVisible()
   await page.getByRole('button', { name: 'try again' }).click()
   await expect(page.getByText('something broke')).toBeVisible()
@@ -191,7 +194,7 @@ test('room page passes axe after joining', async ({ page }) => {
 })
 
 test('pwa manifest and icons are served', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/', { waitUntil: 'commit' })
   const manifest = page.locator('link[rel="manifest"]')
   await expect(manifest).toHaveAttribute('href', /manifest/)
   const res = await page.request.get('/manifest.webmanifest')
@@ -203,7 +206,7 @@ test('pwa manifest and icons are served', async ({ page }) => {
 })
 
 test('api docs page loads scalar', async ({ page }) => {
-  await page.goto('/docs')
+  await page.goto('/docs', { waitUntil: 'commit' })
   // scalar renders the spec title once the reference mounts
   await expect(page.getByText('quickchat').first()).toBeVisible({
     timeout: 20_000,
