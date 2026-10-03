@@ -27,7 +27,7 @@ import { loadProfile, resizeAvatar, saveAvatar } from '../lib/profile'
 import { SITE } from '../lib/site'
 import { useMediaQuery } from '../lib/useMedia'
 import { useVisualViewport } from '../lib/useViewport'
-import type { LiveKitGrant, RoomInfo } from '../lib/types'
+import type { LiveKitGrant, Peer, RoomInfo } from '../lib/types'
 
 const Stage = lazy(() => import('../room/Stage'))
 
@@ -37,6 +37,7 @@ export default function RoomPage({ id }: { id: string }) {
   // the last used name survives a crash reload so rejoining is one click
   const [name, setName] = useState(() => localStorage.getItem('qc-name') ?? '')
   const [avatar, setAvatar] = useState(() => loadProfile().avatar)
+  const [meshPeers, setMeshPeers] = useState<Peer[]>([])
   const avatarFileRef = useRef<HTMLInputElement>(null)
   const [joined, setJoined] = useState(false)
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
@@ -393,6 +394,8 @@ export default function RoomPage({ id }: { id: string }) {
                   <Stage
                     grant={grant}
                     e2eeKey={e2eeKey}
+                    peers={meshPeers}
+                    selfAvatar={avatar}
                     onDebug={toggleDebug}
                     debugOpen={debug}
                     compact={!isMd && focus === 'chat'}
@@ -452,6 +455,7 @@ export default function RoomPage({ id }: { id: string }) {
                   registerSound={registerSound}
                   avatar={avatar}
                   onStatus={onHealth}
+                  onPeers={setMeshPeers}
                 />
               </ErrorBoundary>
             )}

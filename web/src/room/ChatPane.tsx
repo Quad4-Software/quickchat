@@ -90,6 +90,7 @@ export default function ChatPane({
   registerSound,
   avatar,
   onStatus,
+  onPeers,
 }: {
   room: string
   name: string
@@ -107,9 +108,14 @@ export default function ChatPane({
   avatar?: string | undefined
   // reports signaling health up to the header status button
   onStatus?: ((status: string, ping: number | null) => void) | undefined
+  // mirrors the roster up so the stage can match avatars to tiles
+  onPeers?: ((peers: Peer[]) => void) | undefined
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
+  useEffect(() => {
+    onPeers?.(peers)
+  }, [peers, onPeers])
   const [typing, setTyping] = useState<Peer[]>([])
   const [conn, setConn] = useState<SignalState>({ status: 'connecting', attempt: 0 })
   const [links, setLinks] = useState<Record<string, PeerLink>>({})

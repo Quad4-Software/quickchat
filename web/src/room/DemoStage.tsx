@@ -15,6 +15,8 @@ import {
   VideoOff,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { loadProfile } from '../lib/profile'
+import Avatar from '../components/Avatar'
 import { gridLayout } from '../lib/grid'
 import { useElementSize } from '../lib/useElementSize'
 import { useMediaQuery } from '../lib/useMedia'
@@ -165,9 +167,11 @@ function Tile({
     >
       {camOff || tile.kind === 'voice' ? (
         <div className="flex h-full w-full items-center justify-center">
-          <span className="flex size-14 items-center justify-center rounded-full border border-border-strong bg-card text-lg font-semibold text-muted-foreground">
-            {tile.name.slice(0, 1).toUpperCase()}
-          </span>
+          <Avatar
+            name={tile.name}
+            avatar={tile.id === 'you' ? loadProfile().avatar : undefined}
+            className="size-14 rounded-full border-border-strong bg-card text-lg font-semibold"
+          />
         </div>
       ) : (
         <video

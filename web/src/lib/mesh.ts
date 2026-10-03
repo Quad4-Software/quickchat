@@ -79,6 +79,14 @@ const MAX_QUEUED_CHAT = 32
 // handful per second at most, anything above is a hostile flood
 const MAX_WIRE_PER_SEC = 64
 
+// the server normally advertises stun, but an older or minimal deploy
+// sends an empty list and host candidates alone cannot cross nats, so
+// the mesh keeps public stun as a floor
+const DEFAULT_ICE_SERVERS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun.cloudflare.com:3478',
+]
+
 interface OutTransfer {
   header: FileHeader
   file: Blob
@@ -341,8 +349,11 @@ export class Mesh implements ChatSession {
   }
 
   private rtcConfig(): RTCConfiguration {
-    const servers = this.opts.iceServers ?? []
-    return servers.length > 0 ? { iceServers: [{ urls: servers }] } : {}
+    const servers =
+      this.opts.iceServers && this.opts.iceServers.length > 0
+        ? this.opts.iceServers
+        : DEFAULT_ICE_SERVERS
+    return { iceServers: [{ urls: servers }] }
   }
 
   private wirePeerConnection(p: PeerConn) {

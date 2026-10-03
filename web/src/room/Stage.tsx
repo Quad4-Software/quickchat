@@ -57,7 +57,8 @@ import { useRegisterStats } from '../lib/stats'
 import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
 import { anchor } from '../lib/popover'
 import type { StatRow, StatSection } from '../lib/stats'
-import type { LiveKitGrant } from '../lib/types'
+import type { LiveKitGrant, Peer } from '../lib/types'
+import Avatar from '../components/Avatar'
 
 type TrackRef = TrackReferenceOrPlaceholder
 type View = 'grid' | 'speaker'
@@ -75,6 +76,8 @@ function Stage({
   debugOpen,
   compact,
   onSound,
+  peers,
+  selfAvatar,
 }: {
   grant: LiveKitGrant
   e2eeKey?: string | null
@@ -85,6 +88,10 @@ function Stage({
   compact?: boolean | undefined
   // fired with the pad label so chat can log the play
   onSound?: ((label: string) => void) | undefined
+  // mesh roster for matching avatars to participant names, plus the
+  // local profile avatar for the self tile
+  peers?: Peer[] | undefined
+  selfAvatar?: string | undefined
 }) {
   // the key arrives via URL fragment and is set once, it never reaches the
   // server. webAudioMix routes remote tracks through sdk-managed gain
@@ -138,6 +145,8 @@ function Stage({
         debugOpen={debugOpen}
         compact={compact}
         onSound={onSound}
+        peers={peers}
+        selfAvatar={selfAvatar}
       />
       <RoomAudioRenderer />
     </LiveKitRoom>
@@ -162,6 +171,8 @@ function StageInner({
   debugOpen,
   compact,
   onSound,
+  peers,
+  selfAvatar,
 }: {
   serverUrl: string
   token: string
@@ -169,6 +180,8 @@ function StageInner({
   debugOpen?: boolean | undefined
   onSound?: ((label: string) => void) | undefined
   compact?: boolean | undefined
+  peers?: Peer[] | undefined
+  selfAvatar?: string | undefined
 }) {
   const room = useRoomContext()
   const tracks = useTracks([
@@ -195,6 +208,13 @@ function StageInner({
       return {}
     }
   })
+  // livekit tiles know names but not avatars, the mesh roster does, so
+  // match by display name and fall back to initials
+  const avatarFor = (p: { isLocal: boolean; name?: string; identity: string }) => {
+    if (p.isLocal) return selfAvatar
+    const name = p.name || p.identity
+    return peers?.find((peer) => peer.name === name)?.avatar
+  }
   const rootRef = useRef<HTMLDivElement>(null)
   const [gridRef, gridSize] = useElementSize<HTMLDivElement>()
   const prevBytes = useRef(new Map<string, { bytes: number; ts: number }>())
@@ -679,6 +699,7 @@ function StageInner({
             <div className="min-h-0 flex-1">
               <Tile
                 track={featured}
+                avatar={avatarFor(featured.participant)}
                 featured
                 volume={volumes[featured.participant.identity] ?? 1}
                 onVolume={
@@ -694,6 +715,7 @@ function StageInner({
                   <Tile
                     key={`${t.participant.identity}-${t.source}`}
                     track={t}
+                    avatar={avatarFor(t.participant)}
                     strip
                     volume={volumes[t.participant.identity] ?? 1}
                     onVolume={
@@ -714,6 +736,7 @@ function StageInner({
               <Tile
                 key={`${t.participant.identity}-${t.source}`}
                 track={t}
+                avatar={avatarFor(t.participant)}
                 strip
                 volume={volumes[t.participant.identity] ?? 1}
                 onVolume={
@@ -738,6 +761,7 @@ function StageInner({
               <Tile
                 key={`${t.participant.identity}-${t.source}`}
                 track={t}
+                avatar={avatarFor(t.participant)}
                 volume={volumes[t.participant.identity] ?? 1}
                 onVolume={
                   t.participant.isLocal
@@ -798,12 +822,14 @@ function Tile({
   track,
   featured,
   strip,
+  avatar,
   volume,
   onVolume,
 }: {
   track: TrackRef
   featured?: boolean | undefined
   strip?: boolean | undefined
+  avatar?: string | undefined
   volume?: number | undefined
   onVolume?: ((v: number) => void) | undefined
 }) {
@@ -855,11 +881,11 @@ function Tile({
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
-          <span className="flex size-14 items-center justify-center rounded-full border border-border-strong bg-card text-lg font-semibold text-muted-foreground">
-            {(track.participant.name || track.participant.identity || '?')
-              .slice(0, 1)
-              .toUpperCase()}
-          </span>
+          <Avatar
+            name={track.participant.name || track.participant.identity || '?'}
+            avatar={avatar}
+            className="size-14 rounded-full border-border-strong bg-card text-lg font-semibold"
+          />
         </div>
       )}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-background/80 px-2 py-0.5 backdrop-blur-sm">
@@ -956,9 +982,7 @@ function Tile({
 }
 
 const toggleClass = cn(
-  'flex items-center gap-2 rounded-full px-3 py-2.5',
-  // coarse pointers get a taller hit area without changing desktop density
-  'max-sm:px-4 max-sm:py-3',
+  'flex items-center gap-2 rounded-full px-3 py-2',
   'text-sm font-medium text-muted-foreground hover:bg-hover hover:text-foreground',
   'aria-pressed:bg-hover aria-pressed:text-emphasis',
 )

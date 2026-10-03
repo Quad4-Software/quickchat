@@ -18,9 +18,10 @@ type Config struct {
 	RoomTTL       time.Duration
 	TrustedProxy  bool
 
-	// ICEServers are advertised to clients for the p2p mesh. Empty means
-	// host candidates only, which covers lan and overlay networks. Add
-	// stun: or turn: urls for nat traversal across the open internet.
+	// ICEServers are advertised to clients for the p2p mesh. The
+	// default carries public stun since host candidates alone cannot
+	// cross nats, and most real pairs sit behind different ones. Set
+	// QUICKCHAT_ICE_SERVERS to override or add turn: for symmetric nats.
 	ICEServers []string
 	// MaxFileBytes caps peer-to-peer file transfers. Files live in memory
 	// at both ends so this also bounds memory per transfer.
@@ -43,7 +44,11 @@ func Load() Config {
 		RoomTTL:       durEnv("QUICKCHAT_ROOM_TTL", 7*24*time.Hour),
 		TrustedProxy:  boolEnv("QUICKCHAT_TRUSTED_PROXY"),
 
-		ICEServers:   listEnv("QUICKCHAT_ICE_SERVERS"),
+		ICEServers: defaultStrings(
+			listEnv("QUICKCHAT_ICE_SERVERS"),
+			"stun:stun.l.google.com:19302",
+			"stun:stun.cloudflare.com:3478",
+		),
 		MaxFileBytes: int64Env("QUICKCHAT_MAX_FILE", 64<<20),
 
 		RateCreatePerMin: intEnv("QUICKCHAT_RATE_CREATE", 12),
@@ -98,4 +103,11 @@ func boolEnv(key string) bool {
 		return true
 	}
 	return false
+}
+
+func defaultStrings(v []string, fallback ...string) []string {
+	if len(v) > 0 {
+		return v
+	}
+	return fallback
 }
