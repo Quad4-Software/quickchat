@@ -86,8 +86,7 @@ jobs:
         include:
           - { os: ubuntu-latest, name: linux amd64, target: linux-amd64 }
           - { os: windows-latest, name: windows, target: windows }
-          - { os: macos-13, name: darwin amd64, target: darwin-amd64 }
-          - { os: macos-15, name: darwin arm64, target: darwin-arm64 }
+          - { os: macos-15, name: darwin, target: darwin }
     env:
       DESKTOP_TARGET: ${{ matrix.target }}
     steps:

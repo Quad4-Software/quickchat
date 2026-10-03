@@ -48,7 +48,7 @@ builds:
       - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
     skip: '{{ if ne .Env.DESKTOP_TARGET "windows" }}true{{ end }}'
 
-  - id: desktop-darwin-amd64
+  - id: desktop-darwin
     main: ./cmd/desktop
     binary: quickchat
     env:
@@ -57,22 +57,6 @@ builds:
       - darwin
     goarch:
       - amd64
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
-      - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
-    skip: '{{ if ne .Env.DESKTOP_TARGET "darwin-amd64" }}true{{ end }}'
-
-  - id: desktop-darwin-arm64
-    main: ./cmd/desktop
-    binary: quickchat
-    env:
-      - CGO_ENABLED=1
-    goos:
-      - darwin
-    goarch:
       - arm64
     flags:
       - -trimpath
@@ -80,7 +64,9 @@ builds:
       - -s -w
       - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
       - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
-    skip: '{{ if ne .Env.DESKTOP_TARGET "darwin-arm64" }}true{{ end }}'
+    # clang on apple silicon passes -arch to the linker so both arches
+    # build on a single macos runner
+    skip: '{{ if ne .Env.DESKTOP_TARGET "darwin" }}true{{ end }}'
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

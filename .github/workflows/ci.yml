@@ -89,8 +89,7 @@ jobs:
         include:
           - { os: ubuntu-latest, name: linux }
           - { os: windows-latest, name: windows }
-          - { os: macos-13, name: darwin amd64 }
-          - { os: macos-15, name: darwin arm64 }
+          - { os: macos-15, name: darwin }
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -107,7 +106,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: build
-        run: go build ./cmd/desktop
+        run: |
+          go build ./cmd/desktop
+          if [ "$(uname)" = "Darwin" ]; then GOARCH=amd64 go build -o /dev/null ./cmd/desktop; fi
 
   e2e:
     name: e2e
