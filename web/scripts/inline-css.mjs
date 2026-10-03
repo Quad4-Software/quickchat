@@ -2,9 +2,10 @@
 // wait on a render-blocking css request. The bundle is a single small css
 // file (tailwind), so inlining it is a strict win for an app this size.
 import { readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
-const dist = new URL('../dist', import.meta.url).pathname
+const dist = fileURLToPath(new URL('../dist', import.meta.url))
 const htmlPath = join(dist, 'index.html')
 const html = readFileSync(htmlPath, 'utf8')
 
