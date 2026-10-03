@@ -173,6 +173,7 @@ func resolveServer(dataDir, localURL string) string {
 	if v := os.Getenv("QUICKCHAT_SERVER"); v != "" {
 		return normalizeServer(v, localURL)
 	}
+	// #nosec G304 -- dataDir is the app config dir, not user input
 	if b, err := os.ReadFile(filepath.Join(dataDir, serverFile)); err == nil {
 		if s := strings.TrimSpace(string(b)); s != "" {
 			return normalizeServer(s, localURL)

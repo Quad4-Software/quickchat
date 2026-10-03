@@ -16,6 +16,7 @@ require (
 	buf.build/go/protovalidate v1.2.0 // indirect
 	buf.build/go/protoyaml v0.7.0 // indirect
 	cel.dev/expr v0.25.2 // indirect
+	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
