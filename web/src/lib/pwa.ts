@@ -13,14 +13,19 @@ export function initPwa(onNeedReload: (reload: () => void) => void) {
   // paint
   registerSW({
     immediate: false,
-    // poll hourly and on refocus so a pinned room picks up deploys, the
-    // browser alone may not check for a day or more
+    // poll frequently and on refocus so a pinned room picks up deploys,
+    // the browser alone may not check for a day or more
     onRegisteredSW(_url, registration) {
       if (!registration) return
-      setInterval(() => void registration.update(), 60 * 60 * 1000)
+      const check = () => void registration.update()
+      // a deploy can land mid-session, poll every minute plus on
+      // refocus and network recovery so a pinned room never stays
+      // stale for long
+      setInterval(check, 60_000)
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) void registration.update()
+        if (!document.hidden) check()
       })
+      window.addEventListener('online', check)
     },
     onNeedReload() {
       const reload = () => location.reload()

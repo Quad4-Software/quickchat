@@ -54,6 +54,8 @@ import Soundboard from './Soundboard'
 import { gridLayout } from '../lib/grid'
 import { useElementSize } from '../lib/useElementSize'
 import { useRegisterStats } from '../lib/stats'
+import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
+import { anchor } from '../lib/popover'
 import type { StatRow, StatSection } from '../lib/stats'
 import type { LiveKitGrant } from '../lib/types'
 
@@ -450,6 +452,34 @@ function StageInner({
     room.on(RoomEvent.MediaDevicesError, onErr)
     return () => {
       room.off(RoomEvent.MediaDevicesError, onErr)
+    }
+  }, [room])
+
+  // editable keybinds toggle mic, camera, and screen share
+  useEffect(() => {
+    let binds = loadBinds()
+    const reload = () => {
+      binds = loadBinds()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (isTextTarget(e.target)) return
+      const lp = room.localParticipant
+      if (matchBind(e, binds.mic)) {
+        e.preventDefault()
+        void lp.setMicrophoneEnabled(!lp.isMicrophoneEnabled)
+      } else if (matchBind(e, binds.camera)) {
+        e.preventDefault()
+        void lp.setCameraEnabled(!lp.isCameraEnabled)
+      } else if (matchBind(e, binds.share)) {
+        e.preventDefault()
+        void lp.setScreenShareEnabled(!lp.isScreenShareEnabled)
+      }
+    }
+    window.addEventListener(BINDS_CHANGED, reload)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener(BINDS_CHANGED, reload)
+      window.removeEventListener('keydown', onKey)
     }
   }, [room])
 
@@ -926,11 +956,11 @@ function Tile({
 }
 
 const toggleClass = cn(
-  'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
+  'flex items-center gap-2 rounded-full px-3 py-2.5',
   // coarse pointers get a taller hit area without changing desktop density
   'max-sm:px-4 max-sm:py-3',
   'text-sm font-medium text-muted-foreground hover:bg-hover hover:text-foreground',
-  'aria-pressed:border-border-strong aria-pressed:text-emphasis',
+  'aria-pressed:bg-hover aria-pressed:text-emphasis',
 )
 
 function Controls({
@@ -975,114 +1005,110 @@ function Controls({
   connected?: boolean | undefined
 }) {
   return (
-    <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-      {ptt ? (
-        <button
-          onPointerDown={() => onTalk?.(true)}
-          onPointerUp={() => onTalk?.(false)}
-          onPointerLeave={() => onTalk?.(false)}
-          onContextMenu={(e) => e.preventDefault()}
-          aria-pressed={talking}
-          aria-label="hold to talk"
-          title="hold to talk (or hold space)"
-          className={cn(
-            toggleClass,
-            'select-none touch-none',
-            talking && 'border-success text-success',
-          )}
-        >
-          <Mic className="size-4" aria-hidden />
-          <span className="hidden sm:inline">hold to talk</span>
-        </button>
-      ) : (
-        <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
-          <Mic className="size-4" aria-hidden />
-          <span className="sr-only">microphone</span>
+    <div className="flex justify-center px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="relative flex flex-wrap items-center justify-center gap-0.5 rounded-full border border-border bg-card px-2 py-1.5 shadow-lg">
+        {ptt ? (
+          <button
+            onPointerDown={() => onTalk?.(true)}
+            onPointerUp={() => onTalk?.(false)}
+            onPointerLeave={() => onTalk?.(false)}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-pressed={talking}
+            aria-label="hold to talk"
+            title="hold to talk (or hold space)"
+            className={cn(
+              toggleClass,
+              'select-none touch-none',
+              talking && 'border-success text-success',
+            )}
+          >
+            <Mic className="size-4" aria-hidden />
+            <span className="hidden sm:inline">hold to talk</span>
+          </button>
+        ) : (
+          <TrackToggle source={Track.Source.Microphone} className={toggleClass}>
+            <Mic className="size-4" aria-hidden />
+            <span className="sr-only">microphone</span>
+          </TrackToggle>
+        )}
+        <TrackToggle source={Track.Source.Camera} className={toggleClass}>
+          <Video className="size-4" aria-hidden />
+          <span className="sr-only">camera</span>
         </TrackToggle>
-      )}
-      <TrackToggle source={Track.Source.Camera} className={toggleClass}>
-        <Video className="size-4" aria-hidden />
-        <span className="sr-only">camera</span>
-      </TrackToggle>
-      <TrackToggle source={Track.Source.ScreenShare} className={toggleClass}>
-        <MonitorUp className="size-4" aria-hidden />
-        <span className="sr-only">share screen</span>
-      </TrackToggle>
-      <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
-      <button
-        onClick={() => onView(view === 'grid' ? 'speaker' : 'grid')}
-        aria-label={view === 'grid' ? 'speaker view' : 'grid view'}
-        aria-pressed={view === 'speaker'}
-        title={view === 'grid' ? 'speaker view' : 'grid view'}
-        className={toggleClass}
-      >
-        {view === 'grid' ? (
-          <UserRound className="size-4" aria-hidden />
-        ) : (
-          <LayoutGrid className="size-4" aria-hidden />
-        )}
-      </button>
-      <button
-        onClick={onFullscreen}
-        aria-label={fullscreen ? 'exit fullscreen' : 'fullscreen'}
-        aria-pressed={fullscreen}
-        title={fullscreen ? 'exit fullscreen' : 'fullscreen'}
-        className={toggleClass}
-      >
-        {fullscreen ? (
-          <Minimize className="size-4" aria-hidden />
-        ) : (
-          <Maximize className="size-4" aria-hidden />
-        )}
-      </button>
-      {onDebug && (
+        <TrackToggle source={Track.Source.ScreenShare} className={toggleClass}>
+          <MonitorUp className="size-4" aria-hidden />
+          <span className="sr-only">share screen</span>
+        </TrackToggle>
+        <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
         <button
-          onClick={onDebug}
-          aria-label="connection stats"
-          aria-pressed={debugOpen}
-          title="connection stats"
+          onClick={() => onView(view === 'grid' ? 'speaker' : 'grid')}
+          aria-label={view === 'grid' ? 'speaker view' : 'grid view'}
+          aria-pressed={view === 'speaker'}
+          title={view === 'grid' ? 'speaker view' : 'grid view'}
           className={toggleClass}
         >
-          <Activity className="size-4" aria-hidden />
+          {view === 'grid' ? (
+            <UserRound className="size-4" aria-hidden />
+          ) : (
+            <LayoutGrid className="size-4" aria-hidden />
+          )}
         </button>
-      )}
-      {onPad && <Soundboard onPlay={onPad} disabled={!connected} />}
-      {onDevice && (
-        <SettingsMenu
-          devices={devices ?? []}
-          chosen={chosen ?? {}}
-          onDevice={onDevice}
-          ptt={ptt}
-          onPtt={onPtt}
-          saver={saver}
-          onSaver={onSaver}
-        />
-      )}
-      <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
-      {disconnected ? (
         <button
-          onClick={onReconnect}
-          aria-label="connect"
-          title="connect"
-          className={cn(
-            'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
-            'text-sm font-medium text-success hover:bg-success/10',
-          )}
+          onClick={onFullscreen}
+          aria-label={fullscreen ? 'exit fullscreen' : 'fullscreen'}
+          aria-pressed={fullscreen}
+          title={fullscreen ? 'exit fullscreen' : 'fullscreen'}
+          className={toggleClass}
         >
-          <Phone className="size-4" aria-hidden />
-          <span className="sr-only">connect</span>
+          {fullscreen ? (
+            <Minimize className="size-4" aria-hidden />
+          ) : (
+            <Maximize className="size-4" aria-hidden />
+          )}
         </button>
-      ) : (
-        <DisconnectButton
-          className={cn(
-            'flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2',
-            'text-sm font-medium text-destructive hover:bg-destructive/10',
-          )}
-        >
-          <PhoneOff className="size-4" aria-hidden />
-          <span className="sr-only">disconnect</span>
-        </DisconnectButton>
-      )}
+        {onDebug && (
+          <button
+            onClick={onDebug}
+            aria-label="connection stats"
+            aria-pressed={debugOpen}
+            title="connection stats"
+            className={toggleClass}
+          >
+            <Activity className="size-4" aria-hidden />
+          </button>
+        )}
+        {onPad && <Soundboard onPlay={onPad} disabled={!connected} />}
+        {onDevice && (
+          <SettingsMenu
+            devices={devices ?? []}
+            chosen={chosen ?? {}}
+            onDevice={onDevice}
+            ptt={ptt}
+            onPtt={onPtt}
+            saver={saver}
+            onSaver={onSaver}
+          />
+        )}
+        <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
+        {disconnected ? (
+          <button
+            onClick={onReconnect}
+            aria-label="connect"
+            title="connect"
+            className={cn(toggleClass, 'text-success hover:bg-success/10')}
+          >
+            <Phone className="size-4" aria-hidden />
+            <span className="sr-only">connect</span>
+          </button>
+        ) : (
+          <DisconnectButton
+            className={cn(toggleClass, 'text-destructive hover:bg-destructive/10')}
+          >
+            <PhoneOff className="size-4" aria-hidden />
+            <span className="sr-only">disconnect</span>
+          </DisconnectButton>
+        )}
+      </div>
     </div>
   )
 }
@@ -1105,7 +1131,7 @@ function SettingsMenu({
   onSaver?: (() => void) | undefined
 }) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<{ bottom: number; right: number } | null>(null)
+  const [pos, setPos] = useState<ReturnType<typeof anchor> | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -1125,13 +1151,9 @@ function SettingsMenu({
   }, [open])
   const toggle = () => {
     if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
       // fixed anchoring avoids overflow-hidden clipping and keeps the
       // menu glued to the gear on every layout
-      setPos({
-        bottom: window.innerHeight - r.top + 8,
-        right: window.innerWidth - r.right,
-      })
+      setPos(anchor(btnRef.current))
     }
     setOpen(!open)
   }
@@ -1156,7 +1178,7 @@ function SettingsMenu({
         <div
           role="dialog"
           aria-label="media settings"
-          style={{ bottom: pos.bottom, right: pos.right }}
+          style={pos}
           className="fixed z-50 w-64 space-y-3 rounded-md border border-border bg-card p-3 shadow-md"
         >
           {kinds.map(({ kind, label }) => {

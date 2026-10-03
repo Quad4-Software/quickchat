@@ -498,10 +498,10 @@ export class Mesh implements ChatSession {
     } else if (
       w.t === 'avatar' &&
       typeof w.data === 'string' &&
-      w.data.startsWith('data:image/') &&
-      w.data.length < 40_000
+      (w.data === '' || (w.data.startsWith('data:image/') && w.data.length < 40_000))
     ) {
-      p.peer.avatar = w.data
+      if (w.data) p.peer.avatar = w.data
+      else delete p.peer.avatar
       this.h.onAvatar(p.peer, w.data)
     } else if (
       w.t === 'react' &&

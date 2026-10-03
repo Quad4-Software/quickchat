@@ -2,10 +2,9 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
 import {
   Activity,
-  Check,
-  Copy,
   Dices,
   DoorOpen,
+  Keyboard,
   Lock,
   MessageSquare,
   Video,
@@ -17,6 +16,8 @@ import ErrorView from '../components/ErrorView'
 import ChatPane from '../room/ChatPane'
 import ShareLink from '../room/ShareLink'
 import DebugPanel from '../room/DebugPanel'
+import KeybindsModal from '../room/KeybindsModal'
+import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
 import StatsProvider from '../lib/StatsProvider'
 import { getRoom, livekitToken } from '../lib/api'
 import { cn } from '../lib/cn'
@@ -39,8 +40,12 @@ export default function RoomPage({ id }: { id: string }) {
   const avatarFileRef = useRef<HTMLInputElement>(null)
   const [joined, setJoined] = useState(false)
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
-  const [copied, setCopied] = useState(false)
   const [debug, setDebug] = useState(false)
+  const [bindsOpen, setBindsOpen] = useState(false)
+  const [health, setHealth] = useState<{ status: string; ping: number | null }>({
+    status: 'connecting',
+    ping: null,
+  })
   const [joining, setJoining] = useState(false)
   // small screens split attention between the stage and chat: focus
   // picks which one gets the screen. chat stays mounted while hidden
@@ -59,6 +64,10 @@ export default function RoomPage({ id }: { id: string }) {
   const onChatActivity = useCallback(() => {
     if (focusRef.current === 'stage') setChatBadge((n) => n + 1)
   }, [])
+  const onHealth = useCallback(
+    (status: string, ping: number | null) => setHealth({ status, ping }),
+    [],
+  )
   const focusChat = useCallback(() => {
     setFocus('chat')
     setChatBadge(0)
@@ -78,7 +87,6 @@ export default function RoomPage({ id }: { id: string }) {
   // read once at mount: the fragment carries the shared media key and is
   // stable for the lifetime of the page
   const [e2eeKey] = useState(() => keyFromHash(location.hash))
-  const copyTimer = useRef<number | null>(null)
   const asideRef = useRef<HTMLElement>(null)
   const isMd = useMediaQuery('(min-width: 768px)')
   const [chatW, setChatW] = useState(() => {
@@ -110,17 +118,30 @@ export default function RoomPage({ id }: { id: string }) {
   }
 
   useEffect(() => {
-    return () => {
-      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
-    }
-  }, [])
-
-  useEffect(() => {
     document.title = `${id} - ${SITE.name}`
     return () => {
       document.title = SITE.name
     }
   }, [id])
+
+  // room-level binds: stats panel and the shortcuts editor
+  useEffect(() => {
+    let binds = loadBinds()
+    const reload = () => {
+      binds = loadBinds()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (isTextTarget(e.target)) return
+      if (matchBind(e, binds.debug)) setDebug((d) => !d)
+      else if (matchBind(e, binds.shortcuts)) setBindsOpen((o) => !o)
+    }
+    window.addEventListener(BINDS_CHANGED, reload)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener(BINDS_CHANGED, reload)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
 
   useEffect(() => {
     getRoom(id)
@@ -152,14 +173,6 @@ export default function RoomPage({ id }: { id: string }) {
     } finally {
       setJoining(false)
     }
-  }
-
-  function copyLink() {
-    navigator.clipboard.writeText(location.href).then(() => {
-      setCopied(true)
-      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
-      copyTimer.current = window.setTimeout(() => setCopied(false), 1500)
-    })
   }
 
   if (error) {
@@ -319,28 +332,37 @@ export default function RoomPage({ id }: { id: string }) {
             onClick={() => setDebug(!debug)}
             aria-label="connection stats"
             aria-pressed={debug}
-            title="connection stats"
-            className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground aria-pressed:text-emphasis"
+            title={
+              health.status === 'online' && health.ping != null
+                ? `connection stats, ${health.ping}ms`
+                : 'connection stats'
+            }
+            className={cn(
+              'rounded-md p-1.5 hover:bg-hover',
+              health.status === 'online'
+                ? health.ping != null && health.ping < 150
+                  ? 'text-success'
+                  : 'text-warning'
+                : health.status === 'connecting'
+                  ? 'text-muted-foreground'
+                  : 'text-destructive',
+            )}
           >
             <Activity className="size-3.5" />
           </button>
           <button
-            onClick={copyLink}
-            aria-label="copy room link"
-            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
+            onClick={() => setBindsOpen(true)}
+            aria-label="keyboard shortcuts"
+            title="keyboard shortcuts"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground"
           >
-            {copied ? (
-              <Check className="size-3.5 text-success" />
-            ) : (
-              <Copy className="size-3.5" />
-            )}
-            <span className="hidden sm:inline">{copied ? 'copied' : 'copy link'}</span>
+            <Keyboard className="size-3.5" />
           </button>
           <ShareLink url={location.href} />
           <Link
             href="/"
             aria-label="leave room"
-            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-md p-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
           >
             <DoorOpen className="size-3.5" />
             <span className="hidden sm:inline">leave</span>
@@ -429,11 +451,13 @@ export default function RoomPage({ id }: { id: string }) {
                   onChatActivity={onChatActivity}
                   registerSound={registerSound}
                   avatar={avatar}
+                  onStatus={onHealth}
                 />
               </ErrorBoundary>
             )}
           </aside>
           {debug && <DebugPanel onClose={closeDebug} />}
+          {bindsOpen && <KeybindsModal onClose={() => setBindsOpen(false)} />}
         </div>
       </div>
     </StatsProvider>

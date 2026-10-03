@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   Mic,
   Paperclip,
+  Plus,
   Presentation,
   SendHorizonal,
   Smile,
@@ -25,6 +26,8 @@ import type { StatRow } from '../lib/stats'
 import { activityBegin, activityEnd } from '../lib/activity'
 import { reactMutate } from '../lib/reactions'
 import { clearProfile, saveAvatar, saveName } from '../lib/profile'
+import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
+import { anchor } from '../lib/popover'
 import { SITE } from '../lib/site'
 import { fileSize } from '../lib/format'
 import { cn } from '../lib/cn'
@@ -85,6 +88,7 @@ export default function ChatPane({
   onChatActivity,
   registerSound,
   avatar,
+  onStatus,
 }: {
   room: string
   name: string
@@ -100,6 +104,8 @@ export default function ChatPane({
   // remembered avatar from the local profile, rebroadcast to late
   // joiners and on reconnect
   avatar?: string | undefined
+  // reports signaling health up to the header status button
+  onStatus?: ((status: string, ping: number | null) => void) | undefined
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
@@ -107,6 +113,7 @@ export default function ChatPane({
   const [conn, setConn] = useState<SignalState>({ status: 'connecting', attempt: 0 })
   const [links, setLinks] = useState<Record<string, PeerLink>>({})
   const [unread, setUnread] = useState(0)
+  const [ping, setPing] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
   const [body, setBody] = useState('')
@@ -118,7 +125,9 @@ export default function ChatPane({
   const [recording, setRecording] = useState<MediaRecorder | null>(null)
   // a live briefing shared over the chat channel; msgId points at the
   // message carrying the deck blob
-  const [deck, setDeck] = useState<{ msgId: string; by: string } | null>(null)
+  const [deck, setDeck] = useState<{ msgId: string; by: string; peerId?: string } | null>(
+    null,
+  )
   const [notify, setNotify] = useState<NotificationPermission>(() =>
     'Notification' in window ? Notification.permission : 'denied',
   )
@@ -312,6 +321,8 @@ export default function ChatPane({
             delete next[peer.id]
             return next
           })
+          // a presenter leaving ends the briefing for everyone left
+          setDeck((d) => (d?.peerId === peer.id ? null : d))
           appendMessage(sysLine(peer, 'leave'))
           // drop the departed peer from upload denominators
           const affected = [...upProgress.current.keys()].filter((k) =>
@@ -388,7 +399,7 @@ export default function ChatPane({
           tombstone(id)
         },
         onPresent(peer, msgId, on) {
-          setDeck(on ? { msgId, by: peer.name } : null)
+          setDeck(on ? { msgId, by: peer.name, peerId: peer.id } : null)
         },
         onSound(peer, label) {
           appendMessage(eventLine(peer, `played ${label}`))
@@ -403,8 +414,11 @@ export default function ChatPane({
           )
         },
         onAvatar(peer, data) {
-          avatarMapRef.current.set(peer.id, data)
-          const withAv = { ...peer, avatar: data }
+          // an empty payload clears a saved avatar
+          if (data) avatarMapRef.current.set(peer.id, data)
+          else avatarMapRef.current.delete(peer.id)
+          const withAv = { ...peer }
+          if (data) withAv.avatar = data
           peersRef.current = peersRef.current.map((p) => (p.id === peer.id ? withAv : p))
           setPeers((prev) => prev.map((p) => (p.id === peer.id ? withAv : p)))
           setMessages((prev) =>
@@ -540,20 +554,50 @@ export default function ChatPane({
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages, typing])
 
-  // slash focuses the composer from anywhere in the room
+  // the composer bind focuses the message box from anywhere in the room
   useEffect(() => {
+    let binds = loadBinds()
+    const reload = () => {
+      binds = loadBinds()
+    }
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement
-      const editable =
-        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable
-      if (e.key === '/' && !editable) {
+      if (matchBind(e, binds.composer) && !isTextTarget(e.target)) {
         e.preventDefault()
         composerRef.current?.focus()
       }
     }
+    window.addEventListener(BINDS_CHANGED, reload)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener(BINDS_CHANGED, reload)
+      window.removeEventListener('keydown', onKey)
+    }
   }, [])
+
+  // healthz head samples the signaling round trip, a proxy for how
+  // snappy presence and join feel
+  useEffect(() => {
+    let stop = false
+    const tick = () => {
+      const t0 = performance.now()
+      fetch(`${import.meta.env.BASE_URL}healthz`, { method: 'HEAD' })
+        .then(() => {
+          if (!stop) setPing(Math.round(performance.now() - t0))
+        })
+        .catch(() => {})
+    }
+    tick()
+    const i = window.setInterval(tick, 10_000)
+    return () => {
+      stop = true
+      window.clearInterval(i)
+    }
+  }, [])
+
+  // surface signal health to the header stats button
+  useEffect(() => {
+    onStatus?.(conn.status, ping)
+  }, [onStatus, conn.status, ping])
 
   function onScroll() {
     const el = listRef.current
@@ -700,6 +744,7 @@ export default function ChatPane({
       saveAvatar(data)
       restamp({ avatar: data || null })
       if (data) meshRef.current?.broadcastAvatar(data)
+      else meshRef.current?.broadcastAvatar('')
     },
     [restamp],
   )
@@ -728,6 +773,14 @@ export default function ChatPane({
     })
   }
 
+  // an unmount mid-record must release the mic instead of leaving the
+  // track live
+  useEffect(() => {
+    if (!recording) return
+    const r = recording
+    return () => r.stop()
+  }, [recording])
+
   async function toggleRecord() {
     if (recording) {
       recording.stop()
@@ -755,8 +808,13 @@ export default function ChatPane({
       const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
       // sub-kb blobs are accidental taps, not messages
       if (blob.size > 1000) {
+        const ext = (rec.mimeType || 'audio/webm').includes('mp4')
+          ? 'm4a'
+          : (rec.mimeType || '').includes('ogg')
+            ? 'ogg'
+            : 'webm'
         sendFiles([
-          new File([blob], `voice-${newNonce()}.webm`, {
+          new File([blob], `voice-${newNonce()}.${ext}`, {
             type: rec.mimeType || 'audio/webm',
           }),
         ])
@@ -937,6 +995,7 @@ export default function ChatPane({
           )}
         >
           {conn.status}
+          {conn.status === 'online' && ping != null ? ` ${ping}ms` : ''}
         </span>
       </div>
 
@@ -1082,7 +1141,7 @@ export default function ChatPane({
           })()}
       </div>
 
-      <div className="border-t border-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="px-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         {error && (
           <p role="alert" className="pb-2 text-xs text-destructive">
             {error}
@@ -1107,7 +1166,7 @@ export default function ChatPane({
             </button>
           </div>
         )}
-        <div className="relative flex items-end gap-2">
+        <div className="relative mx-1 flex items-end gap-0.5 rounded-2xl border border-border bg-card px-1 py-1 shadow-sm">
           <input
             ref={fileRef}
             type="file"
@@ -1118,68 +1177,49 @@ export default function ChatPane({
               if (e.target.files) sendFiles(e.target.files)
             }}
           />
-          <button
-            onClick={() => fileRef.current?.click()}
-            aria-label="send file"
-            title="send file peer to peer (or paste / drop)"
-            className="rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-50"
-          >
-            <Paperclip className="size-4" aria-hidden />
-          </button>
-          <button
-            onClick={toggleRecord}
-            aria-label={
-              recording ? 'stop and send voice message' : 'record voice message'
-            }
-            aria-pressed={Boolean(recording)}
-            title={recording ? 'stop and send' : 'record voice message'}
-            className={cn(
-              'rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground',
-              recording && 'border-destructive text-destructive',
-            )}
-          >
-            {recording ? (
-              <Square className="size-4 fill-current" aria-hidden />
-            ) : (
-              <Mic className="size-4" aria-hidden />
-            )}
-          </button>
-          <textarea
-            ref={composerRef}
-            value={body}
-            onChange={(e) => {
-              onBodyChange(e.target.value)
-              growComposer()
-            }}
-            onPaste={onPaste}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              } else if (e.key === 'Escape') {
-                e.currentTarget.blur()
-              }
-            }}
-            placeholder="message"
-            title="enter to send, / to focus"
-            aria-label="message"
-            rows={1}
-            // on touch devices autofocus pops the on-screen keyboard and
-            // covers the chat right after joining, keep it to mice
-            autoFocus={!matchMedia('(pointer: coarse)').matches}
-            enterKeyHint="send"
-            autoComplete="off"
-            className="min-w-0 flex-1 resize-none rounded-md border border-border bg-recessed px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring/30"
+          <AttachMenu
+            recording={Boolean(recording)}
+            onFile={() => fileRef.current?.click()}
+            onVoice={toggleRecord}
           />
-          <button
-            onClick={() => setEmojiOpen((o) => !o)}
-            aria-label="emoji"
-            aria-expanded={emojiOpen}
-            title="emoji"
-            className="rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground"
-          >
-            <Smile className="size-4" aria-hidden />
-          </button>
+          <div className="relative flex min-w-0 flex-1 items-end">
+            <textarea
+              ref={composerRef}
+              value={body}
+              onChange={(e) => {
+                onBodyChange(e.target.value)
+                growComposer()
+              }}
+              onPaste={onPaste}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                } else if (e.key === 'Escape') {
+                  e.currentTarget.blur()
+                }
+              }}
+              placeholder="message"
+              title="enter to send, / to focus"
+              aria-label="message"
+              rows={1}
+              // on touch devices autofocus pops the on-screen keyboard and
+              // covers the chat right after joining, keep it to mice
+              autoFocus={!matchMedia('(pointer: coarse)').matches}
+              enterKeyHint="send"
+              autoComplete="off"
+              className="min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            />
+            <button
+              onClick={() => setEmojiOpen((o) => !o)}
+              aria-label="emoji"
+              aria-expanded={emojiOpen}
+              title="emoji"
+              className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+            >
+              <Smile className="size-4" aria-hidden />
+            </button>
+          </div>
           {emojiOpen && (
             <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />
           )}
@@ -1187,12 +1227,108 @@ export default function ChatPane({
             onClick={send}
             disabled={!body.trim()}
             aria-label="send message"
-            className="rounded-md bg-inverted p-2.5 text-inverted-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="shrink-0 rounded-full p-2 text-emphasis hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             <SendHorizonal className="size-4" aria-hidden />
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// AttachMenu collapses the file and voice actions into one ghost plus
+// button; while recording the button itself becomes the stop control
+function AttachMenu({
+  recording,
+  onFile,
+  onVoice,
+}: {
+  recording: boolean
+  onFile: () => void
+  onVoice: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<ReturnType<typeof anchor> | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+
+  if (recording) {
+    return (
+      <button
+        onClick={onVoice}
+        aria-label="stop and send voice message"
+        title="stop and send"
+        className="shrink-0 rounded-full p-2 text-destructive hover:bg-hover"
+      >
+        <Square className="size-4 fill-current" aria-hidden />
+      </button>
+    )
+  }
+
+  return (
+    <div ref={ref} className="shrink-0">
+      <button
+        ref={btnRef}
+        onClick={() => {
+          if (!open && btnRef.current) {
+            setPos(anchor(btnRef.current, 160, 'left'))
+          }
+          setOpen(!open)
+        }}
+        aria-label="attachments"
+        aria-expanded={open}
+        title="attachments"
+        className="rounded-full p-2 text-muted-foreground hover:bg-hover hover:text-foreground"
+      >
+        <Plus className="size-4" aria-hidden />
+      </button>
+      {open && pos && (
+        <div
+          role="menu"
+          aria-label="attachments"
+          style={pos}
+          className="fixed z-50 w-44 rounded-md border border-border bg-card p-1 shadow-md"
+        >
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onFile()
+            }}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-foreground hover:bg-hover"
+          >
+            <Paperclip className="size-3.5" aria-hidden />
+            send file
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onVoice()
+            }}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-foreground hover:bg-hover"
+          >
+            <Mic className="size-3.5" aria-hidden />
+            voice message
+          </button>
+        </div>
+      )}
     </div>
   )
 }

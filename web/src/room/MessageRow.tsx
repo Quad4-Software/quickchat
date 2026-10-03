@@ -1,5 +1,14 @@
-import { memo } from 'react'
-import { Copy, CornerUpLeft, FileIcon, Loader2, Presentation, Trash2 } from 'lucide-react'
+import { memo, useEffect, useRef, useState } from 'react'
+import {
+  Copy,
+  CornerUpLeft,
+  FileIcon,
+  Loader2,
+  Pause,
+  Play,
+  Presentation,
+  Trash2,
+} from 'lucide-react'
 import { fileSize, timestamp } from '../lib/format'
 import { parseMd } from '../lib/markdown'
 import { cn } from '../lib/cn'
@@ -245,11 +254,7 @@ function FileCard({ file }: { file: FileRef }) {
     )
   }
   if (file.url && file.mime.startsWith('audio/')) {
-    return (
-      <div className="mt-1 w-fit min-w-52 rounded-md border border-border bg-card p-1.5">
-        <audio controls preload="metadata" src={file.url} className="h-8 w-full" />
-      </div>
-    )
+    return <VoiceNote file={file} />
   }
   return (
     <a
@@ -270,5 +275,127 @@ function FileCard({ file }: { file: FileRef }) {
         </span>
       )}
     </a>
+  )
+}
+
+const BARS = 32
+
+// VoiceNote decodes the blob into real rms peaks so the bar graph is
+// an actual waveform, not decoration. Seeking by tap follows the play
+// position.
+function VoiceNote({ file }: { file: FileRef }) {
+  const [peaks, setPeaks] = useState<number[]>([])
+  const [dur, setDur] = useState(0)
+  const [t, setT] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    let stop = false
+    const ac = new AudioContext()
+    fetch(file.url!)
+      .then((r) => r.arrayBuffer())
+      .then((d) => ac.decodeAudioData(d))
+      .then((buf) => {
+        if (stop) return
+        setDur(buf.duration)
+        const data = buf.getChannelData(0)
+        const bucket = Math.max(1, Math.floor(data.length / BARS))
+        const out: number[] = []
+        for (let i = 0; i < BARS; i++) {
+          let sum = 0
+          const off = i * bucket
+          for (let j = 0; j < bucket; j += 16) {
+            const v = data[off + j] ?? 0
+            sum += v * v
+          }
+          out.push(Math.sqrt(sum / Math.max(1, bucket / 16)))
+        }
+        const max = Math.max(0.01, ...out)
+        setPeaks(out.map((p) => Math.max(0.12, p / max)))
+      })
+      .catch(() => setPeaks(Array(BARS).fill(0.4)))
+      .finally(() => void ac.close())
+    return () => {
+      stop = true
+      void ac.close().catch(() => {})
+    }
+  }, [file.url])
+
+  useEffect(() => {
+    const el = audioRef.current
+    if (!el) return
+    const tick = () => setT(el.currentTime)
+    const end = () => setPlaying(false)
+    el.addEventListener('timeupdate', tick)
+    el.addEventListener('ended', end)
+    el.addEventListener('pause', end)
+    return () => {
+      el.removeEventListener('timeupdate', tick)
+      el.removeEventListener('ended', end)
+      el.removeEventListener('pause', end)
+    }
+  }, [])
+
+  const toggle = () => {
+    const el = audioRef.current
+    if (!el) return
+    if (playing) {
+      el.pause()
+    } else {
+      void el.play().then(() => setPlaying(true))
+    }
+  }
+
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = audioRef.current
+    if (!el || !el.duration) return
+    const r = e.currentTarget.getBoundingClientRect()
+    el.currentTime = ((e.clientX - r.left) / r.width) * el.duration
+    setT(el.currentTime)
+  }
+
+  const frac = dur ? t / dur : 0
+  const lit = Math.round(frac * BARS)
+
+  return (
+    <div className="mt-1 flex w-56 items-center gap-2 rounded-2xl border border-border bg-card py-1.5 pl-1.5 pr-3">
+      <audio ref={audioRef} src={file.url!} preload="metadata" />
+      <button
+        onClick={toggle}
+        aria-label={playing ? 'pause voice message' : 'play voice message'}
+        aria-pressed={playing}
+        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-inverted text-inverted-foreground hover:opacity-90"
+      >
+        {playing ? (
+          <Pause className="size-3.5 fill-current" aria-hidden />
+        ) : (
+          <Play className="size-3.5 fill-current" aria-hidden />
+        )}
+      </button>
+      <div
+        role="slider"
+        aria-label="voice message position"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(frac * 100)}
+        onClick={seek}
+        className="flex h-6 min-w-0 flex-1 cursor-pointer items-center gap-px"
+      >
+        {(peaks.length ? peaks : Array(BARS).fill(0.3)).map((p, i) => (
+          <span
+            key={i}
+            className={cn(
+              'w-[3px] shrink-0 rounded-full',
+              i < lit ? 'bg-emphasis' : 'bg-muted-foreground/50',
+            )}
+            style={{ height: `${Math.max(4, p * 24)}px` }}
+          />
+        ))}
+      </div>
+      <span className="shrink-0 font-mono text-[10px] text-dim">
+        {dur ? `${dur.toFixed(1)}s` : ''}
+      </span>
+    </div>
   )
 }

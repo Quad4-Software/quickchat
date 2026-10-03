@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { decodeFile, preset, SOUNDS } from '../lib/soundboard'
+import { anchor } from '../lib/popover'
 
 const ICONS: Record<string, LucideIcon> = {
   siren: Siren,
@@ -60,7 +61,7 @@ export default function Soundboard({
   disabled?: boolean | undefined
 }) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<{ bottom: number; right: number } | null>(null)
+  const [pos, setPos] = useState<ReturnType<typeof anchor> | null>(null)
   const [customs, setCustoms] = useState<Custom[]>(loadCustoms)
   const [busy, setBusy] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -112,11 +113,7 @@ export default function Soundboard({
 
   const toggle = () => {
     if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
-      setPos({
-        bottom: window.innerHeight - r.top + 8,
-        right: window.innerWidth - r.right,
-      })
+      setPos(anchor(btnRef.current))
     }
     setOpen(!open)
   }
@@ -129,7 +126,7 @@ export default function Soundboard({
         aria-label="soundboard"
         aria-expanded={open}
         title="soundboard"
-        className="rounded-md border border-border bg-card p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+        className="rounded-full p-2.5 text-muted-foreground hover:bg-hover hover:text-foreground"
       >
         <Music className="size-4" aria-hidden />
       </button>
@@ -137,7 +134,7 @@ export default function Soundboard({
         <div
           role="dialog"
           aria-label="soundboard"
-          style={{ bottom: pos.bottom, right: pos.right }}
+          style={pos}
           className="fixed z-50 grid w-56 grid-cols-2 gap-1.5 rounded-md border border-border bg-card p-2 shadow-md"
         >
           {SOUNDS.map((s) => {

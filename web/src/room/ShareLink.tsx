@@ -49,7 +49,7 @@ export default function ShareLink({ url }: { url: string }) {
         aria-label="share room"
         aria-expanded={open}
         title="share room"
-        className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
       >
         <Share2 className="size-3.5" aria-hidden />
         <span className="hidden sm:inline">share</span>

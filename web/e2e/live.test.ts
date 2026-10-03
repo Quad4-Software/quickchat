@@ -173,11 +173,14 @@ test('soundboard pad publishes and logs the play', async ({ page }) => {
   await pad.click()
   const board = page.getByRole('dialog', { name: 'soundboard' })
   await expect(board).toBeVisible()
-  // the dialog anchors to its trigger, not a viewport corner
+  // the dialog anchors to its trigger and stays inside the viewport on
+  // both layouts: above it on desktop, below it on the mobile strip
   const bb = (await pad.boundingBox())!
   const db = (await board.boundingBox())!
   expect(Math.abs(db.x + db.width - (bb.x + bb.width))).toBeLessThan(24)
-  expect(db.y + db.height).toBeLessThanOrEqual(bb.y + 4)
+  expect(db.y).toBeGreaterThanOrEqual(0)
+  const vh = await page.evaluate(() => window.innerHeight)
+  expect(db.y + db.height).toBeLessThanOrEqual(vh)
   // pads carry icons
   await expect(board.getByRole('button', { name: 'ding' }).locator('svg')).toBeVisible()
   await board.getByRole('button', { name: 'ding' }).click()
