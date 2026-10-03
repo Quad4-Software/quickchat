@@ -204,3 +204,51 @@ test('debug panel shows livekit media stats', async ({ page }) => {
   await expect(panel.getByText('connected').first()).toBeVisible()
   await expect(panel.getByText('encryption')).toBeVisible()
 })
+
+test('chat and files ride the livekit data channel', async ({ browser }) => {
+  const p1 = await (await browser.newContext()).newPage()
+  const p2 = await (await browser.newContext()).newPage()
+
+  await p1.goto('/', { waitUntil: 'commit' })
+  await p1.getByRole('button', { name: 'new room' }).click()
+  await p1.waitForURL(/\/r\/[a-z0-9]+/)
+  const url = p1.url()
+
+  await join(p1, url, 'alice')
+  await join(p2, url, 'bob')
+
+  await expect(p1.getByText('bob joined')).toBeVisible({ timeout: 20000 })
+
+  const box1 = p1.getByRole('textbox')
+  await box1.fill('hello over livekit')
+  await box1.press('Enter')
+  await expect(p2.getByText('hello over livekit')).toBeVisible({ timeout: 20000 })
+
+  const box2 = p2.getByRole('textbox')
+  await box2.fill('reply over livekit')
+  await box2.press('Enter')
+  await expect(p1.getByText('reply over livekit')).toBeVisible({ timeout: 20000 })
+
+  // typing indicator rides the same channel; wait out the send throttle
+  await p2.waitForTimeout(1800)
+  await box2.fill('typing away')
+  await expect(p1.locator('.typing-dot').first()).toBeVisible({ timeout: 15000 })
+
+  await p1.getByRole('button', { name: 'attachments' }).click()
+  const [chooser] = await Promise.all([
+    p1.waitForEvent('filechooser'),
+    p1.getByRole('menuitem', { name: 'send file' }).click(),
+  ])
+  await chooser.setFiles({
+    name: 'lk-note.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('livekit file body'),
+  })
+  await expect(p1.getByText('lk-note.txt')).toBeVisible({ timeout: 10000 })
+  // the row lands as soon as the meta frame does, the link when the
+  // chunked body finishes
+  await expect(p2.getByText('lk-note.txt')).toBeVisible({ timeout: 15000 })
+  await expect(p2.getByRole('link', { name: 'lk-note.txt' })).toBeVisible({
+    timeout: 30000,
+  })
+})

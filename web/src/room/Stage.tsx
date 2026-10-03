@@ -11,7 +11,6 @@ import {
 } from '@livekit/components-react'
 import type { TrackReferenceOrPlaceholder } from '@livekit/components-react'
 import {
-  ExternalE2EEKeyProvider,
   isE2EESupported,
   MediaDeviceFailure,
   ParticipantEvent,
@@ -23,7 +22,7 @@ import type {
   ConnectionState,
   Participant,
   RemoteParticipant,
-  RoomOptions,
+  Room,
 } from 'livekit-client'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -56,6 +55,7 @@ import { useElementSize } from '../lib/useElementSize'
 import { useRegisterStats } from '../lib/stats'
 import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
 import { anchor } from '../lib/popover'
+import { roomOptions } from '../lib/roomopts'
 import type { StatRow, StatSection } from '../lib/stats'
 import type { LiveKitGrant, Peer } from '../lib/types'
 import Avatar from '../components/Avatar'
@@ -78,6 +78,7 @@ function Stage({
   onSound,
   peers,
   selfAvatar,
+  lkRoom,
 }: {
   grant: LiveKitGrant
   e2eeKey?: string | null
@@ -92,6 +93,8 @@ function Stage({
   // local profile avatar for the self tile
   peers?: Peer[] | undefined
   selfAvatar?: string | undefined
+  // a caller-owned Room so chat can share the sfu connection
+  lkRoom?: Room | undefined
 }) {
   // the key arrives via URL fragment and is set once, it never reaches the
   // server. webAudioMix routes remote tracks through sdk-managed gain
@@ -99,18 +102,7 @@ function Stage({
   // without insertable streams cannot do e2ee and fall back to dtls-srtp
   // rather than failing the whole room
   const e2eeUsable = Boolean(e2eeKey) && isE2EESupported()
-  const options = useMemo<RoomOptions>(() => {
-    const opts: RoomOptions = { webAudioMix: true }
-    if (e2eeUsable && e2eeKey) {
-      const keyProvider = new ExternalE2EEKeyProvider()
-      void keyProvider.setKey(e2eeKey)
-      opts.encryption = {
-        keyProvider,
-        worker: new Worker(new URL('livekit-client/e2ee-worker', import.meta.url)),
-      }
-    }
-    return opts
-  }, [e2eeKey, e2eeUsable])
+  const options = useMemo(() => roomOptions(e2eeKey), [e2eeKey])
 
   // terminate the e2ee worker on unmount
   useEffect(() => {
@@ -126,7 +118,7 @@ function Stage({
       token={grant.token}
       connect
       video={false}
-      options={options}
+      {...(lkRoom ? { room: lkRoom } : { options })}
       className="flex h-full flex-col"
     >
       {e2eeKey && !e2eeUsable && (

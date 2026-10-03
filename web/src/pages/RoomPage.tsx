@@ -1,5 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'wouter'
+import { Room } from 'livekit-client'
 import {
   Activity,
   Dices,
@@ -20,6 +21,10 @@ import KeybindsModal from '../room/KeybindsModal'
 import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
 import StatsProvider from '../lib/StatsProvider'
 import { getRoom, livekitToken } from '../lib/api'
+import { LkSession } from '../lib/lksession'
+import { Mesh } from '../lib/mesh'
+import { roomOptions } from '../lib/roomopts'
+import type { MeshOptions } from '../lib/mesh'
 import { cn } from '../lib/cn'
 import { keyFromHash, mediaE2EESupported } from '../lib/e2ee'
 import { randomName } from '../lib/names'
@@ -88,6 +93,23 @@ export default function RoomPage({ id }: { id: string }) {
   // read once at mount: the fragment carries the shared media key and is
   // stable for the lifetime of the page
   const [e2eeKey] = useState(() => keyFromHash(location.hash))
+  // one sfu connection carries media and chat: chat rides the livekit
+  // data channel since direct p2p links fail on some nat setups. the
+  // options must bake into the manual Room since LiveKitRoom ignores
+  // its own options prop in that mode
+  const lkOpts = useMemo(() => roomOptions(e2eeKey), [e2eeKey])
+  const lkRoom = useMemo(() => (grant ? new Room(lkOpts) : null), [grant, lkOpts])
+  useEffect(() => {
+    return () => {
+      const enc = lkOpts.encryption
+      if (enc && 'worker' in enc) enc.worker.terminate()
+    }
+  }, [lkOpts])
+  const chatSession = useCallback(
+    (o: MeshOptions) => (lkRoom ? new LkSession(lkRoom, o) : new Mesh(o)),
+    [lkRoom],
+  )
+
   const asideRef = useRef<HTMLElement>(null)
   const isMd = useMediaQuery('(min-width: 768px)')
   const [chatW, setChatW] = useState(() => {
@@ -396,6 +418,7 @@ export default function RoomPage({ id }: { id: string }) {
                     e2eeKey={e2eeKey}
                     peers={meshPeers}
                     selfAvatar={avatar}
+                    lkRoom={lkRoom ?? undefined}
                     onDebug={toggleDebug}
                     debugOpen={debug}
                     compact={!isMd && focus === 'chat'}
@@ -451,6 +474,7 @@ export default function RoomPage({ id }: { id: string }) {
                   name={name.trim() || 'anon'}
                   iceServers={info.iceServers ?? []}
                   maxFileSize={info.maxFileSize}
+                  createSession={chatSession}
                   onChatActivity={onChatActivity}
                   registerSound={registerSound}
                   avatar={avatar}

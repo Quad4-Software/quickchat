@@ -1,4 +1,5 @@
 import { SignalingSocket, newNonce } from './signal'
+import { routeWire } from './wire'
 import type { SignalData, SignalEvent, SignalState } from './signal'
 import type { FileMeta, Peer, ReplyRef } from './types'
 
@@ -503,73 +504,7 @@ export class Mesh implements ChatSession {
   }
 
   private onWire(p: PeerConn, w: Wire) {
-    if (w.t === 'typing') {
-      this.h.onTyping(p.peer, !!w.on)
-    } else if (w.t === 'delete' && typeof w.id === 'string' && w.id) {
-      this.h.onDelete(p.peer, w.id)
-    } else if (w.t === 'present' && typeof w.id === 'string' && w.id) {
-      this.h.onPresent(p.peer, w.id, !!w.on)
-    } else if (w.t === 'sound' && typeof w.name === 'string' && w.name) {
-      this.h.onSound(p.peer, w.name.slice(0, 64))
-    } else if (w.t === 'rename' && typeof w.name === 'string' && w.name) {
-      // mutate the connection's peer so frames after the rename carry
-      // the new name
-      p.peer.name = w.name.slice(0, 64)
-      this.h.onRename(p.peer, p.peer.name)
-    } else if (
-      w.t === 'avatar' &&
-      typeof w.data === 'string' &&
-      (w.data === '' || (w.data.startsWith('data:image/') && w.data.length < 40_000))
-    ) {
-      if (w.data) p.peer.avatar = w.data
-      else delete p.peer.avatar
-      this.h.onAvatar(p.peer, w.data)
-    } else if (
-      w.t === 'react' &&
-      typeof w.id === 'string' &&
-      w.id &&
-      typeof w.emoji === 'string' &&
-      w.emoji &&
-      w.emoji.length <= 8
-    ) {
-      this.h.onReact(p.peer, w.id, w.emoji, !!w.on)
-    } else if (w.t === 'chat' && typeof w.id === 'string' && w.id) {
-      const msg: ChatEvent = { id: w.id, peer: p.peer, ts: w.ts || Date.now() }
-      if (typeof w.body === 'string' && w.body) msg.body = w.body.slice(0, 4096)
-      if (w.reply && typeof w.reply === 'object') {
-        const r = w.reply
-        if (typeof r.id === 'string' && r.id && typeof r.name === 'string') {
-          msg.reply = {
-            id: r.id,
-            name: r.name.slice(0, 64),
-            ...(typeof r.body === 'string' && r.body
-              ? { body: r.body.slice(0, 200) }
-              : {}),
-            ...(typeof r.file === 'string' && r.file
-              ? { file: r.file.slice(0, 255) }
-              : {}),
-          }
-        }
-      }
-      if (w.file && typeof w.file === 'object') {
-        const f = w.file
-        if (
-          typeof f.id === 'string' &&
-          typeof f.name === 'string' &&
-          typeof f.size === 'number' &&
-          f.size > 0 &&
-          f.size <= this.opts.maxFileBytes
-        ) {
-          msg.file = {
-            id: f.id,
-            name: f.name.slice(0, 255),
-            size: f.size,
-            mime: String(f.mime ?? ''),
-          }
-        }
-      }
-      this.h.onChat(msg)
-    }
+    routeWire(this.h, p.peer, w, this.opts.maxFileBytes)
   }
 
   // ---- file transfer ----
