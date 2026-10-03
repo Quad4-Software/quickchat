@@ -1,4 +1,6 @@
-# golang.org/x/crypto/openpgp is flagged as unmaintained with no fixed
-# version. We never call openpgp; the module is a transitive dep and the
-# advisory tracks the package existing in the binary, not reachable code.
-GO-2026-5932
+# DLA-4792-1: timezone database update for tzdata 2026b in the
+# distroless base. Debian rates it UNKNOWN and it carries no code
+# fix, but the publish gate builds its sarif with all severities so
+# exit-code trips on any finding at all. Reassess once the pinned
+# distroless digest ships tzdata 2026c.
+DLA-4792-1
