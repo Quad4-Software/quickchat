@@ -89,10 +89,16 @@ Software.
 
 ## Wire protocol
 
+Chat has two transports. When a livekit grant exists, all chat frames
+ride the livekit room data channel (topic q, reliable) via
+lib/lksession.ts, since direct p2p links fail on some nat setups.
+Without livekit, lib/mesh.ts uses the same frames over WebRTC
+datachannels. Both validate through lib/wire.ts.
+
 - ws frames (server): welcome {self, peers}, peer_joined, peer_left,
   signal {from, data}
 - ws frames (client): signal {to, data} where data is sdp or ice
-- 'chat' datachannel (json): {t:chat, id, body?, file?, ts, reply?},
+- 'chat' datachannel or livekit data (json): {t:chat, id, body?, file?, ts, reply?},
   {t:typing, on}, {t:delete, id}, {t:react, id, emoji, on},
   {t:present, id, on}, {t:sound, name}, {t:rename, name},
   {t:avatar, data}. reply is a denormalized quote
@@ -100,8 +106,10 @@ Software.
   shared deck viewer on the pdf message id. sound logs a soundboard
   play. rename updates the peer display name. avatar carries a data
   url under 40k chars, empty string clears it.
-- 'file-<id>' datachannel: first frame json header {id,msgId,name,size,
-  mime}, then binary chunks, sender closes for eof
+- mesh files: 'file-<id>' datachannel, json header {id,msgId,name,size,
+  mime} then binary chunks, sender closes for eof
+- livekit files: {t:fileh,id,msgId,name,size,mime} json frame then binary
+  chunk frames [0x46, u16 idLen, id, u32 seq, payload] under 12k
 - Glare is resolved by perfect negotiation: the peer with the
   lexicographically larger id is polite
 
