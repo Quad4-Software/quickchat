@@ -162,6 +162,18 @@ describe('SignalingSocket', () => {
     sock.close()
   })
 
+  it('retryNow while offline stays offline instead of dialing', () => {
+    const { sock, seen } = states()
+    sock.connect('r1', 'a')
+    latest()!.open()
+    online.onLine = false
+    fire('offline')
+    sock.retryNow()
+    expect(seen.at(-1)!.status).toBe('offline')
+    expect(FakeWS.instances).toHaveLength(1)
+    sock.close()
+  })
+
   it('does not reconnect after close', () => {
     const { sock } = states()
     sock.connect('r1', 'a')

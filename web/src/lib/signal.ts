@@ -161,6 +161,12 @@ export class SignalingSocket {
   // affordance and safe to call while online
   retryNow() {
     if (this.closed || this.ws?.readyState === WebSocket.OPEN) return
+    // dialing a dead network can wedge a socket without events; stay
+    // in offline until the browser reports connectivity
+    if (!navigator.onLine) {
+      this.report('offline')
+      return
+    }
     if (this.timer !== null) {
       window.clearTimeout(this.timer)
       this.timer = null
