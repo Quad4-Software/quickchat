@@ -228,7 +228,8 @@ jobs:
             --title "$TAG" \
             --generate-notes \
             --latest \
-            dist/quickchat_* \
+            dist/quickchat_*.tar.gz \
+            dist/quickchat_*.zip \
             dist/*.intoto.jsonl \
             dist/checksums.txt \
             dist/checksums.txt.sigstore.json
