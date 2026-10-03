@@ -95,7 +95,7 @@ Software.
   signaling only, never message content.
 - Style with the void theme tokens (bg-background, text-foreground,
   bg-card, border-border, text-muted-foreground). Never raw colors in
-  components. Space Grotesk for UI, Space Mono for ids and timestamps.
+  components. Inter for UI, JetBrains Mono for ids and timestamps.
 - The Quad4 mark ships as web/public/quad4-mark.svg and renders through
   a css mask in web/src/components/Mark.tsx. Do not inline svg markup.
   UI icons come from lucide-react.
@@ -112,7 +112,9 @@ Software.
   go:embed), then vite build, then scripts/inline-css.mjs which inlines
   the css bundle into index.html to kill the render-blocking request.
 - The vite test config excludes web/e2e so vitest never picks up
-  playwright specs. e2e raises QUICKCHAT_RATE_* limits and lowers
+  playwright specs. Vitest runs in node; component tests opt into
+  happy-dom per file with the @vitest-environment pragma (see
+  MessageRow.test.tsx). e2e raises QUICKCHAT_RATE_* limits and lowers
   QUICKCHAT_MAX_FILE via env so the suite exercises limits without
   throttling.
 - The scalar docs chunk is split out as docs-*.js and excluded from the
@@ -133,10 +135,9 @@ Software.
   header, controls bar, and composer.
 - Signaling reports a state machine (connecting/online/reconnecting/
   offline with attempt count) instead of a boolean. Chat surfaces it as
-  a header pill plus a banner with a retry button; per-peer datachannel
-  health shows as colored dots next to names. Peer join/leave lands in
-  the log as system lines. Media connection state and per-participant
-  connection quality surface on the stage and tiles the same way.
+  a header pill plus a banner with a retry button. Peer join/leave
+  lands in the log as system lines. Media connection state and
+  per-participant connection quality surface on the stage and tiles.
 - Playwright runs four projects: chromium desktop+mobile, firefox,
   webkit. live.test.ts activates only when LIVEKIT_URL is set. WebKit
   headless cannot resolve its own mdns ice candidates, so p2p mesh specs

@@ -1,15 +1,16 @@
 @import 'tailwindcss';
-@import '@fontsource/space-grotesk/latin-400.css';
-@import '@fontsource/space-grotesk/latin-500.css';
-@import '@fontsource/space-grotesk/latin-700.css';
-@import '@fontsource/space-mono/latin-400.css';
-@import '@fontsource/space-mono/latin-700.css';
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/inter/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-700.css';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: 'Space Grotesk', system-ui, sans-serif;
-  --font-mono: 'Space Mono', ui-monospace, monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   --color-void-50: #f4f4f5;
   --color-void-100: #e9e9ec;

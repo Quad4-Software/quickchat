@@ -6,9 +6,8 @@ import type { ChatMessage, FileRef } from '../lib/types'
 export default function MessageRow({ msg }: { msg: ChatMessage }) {
   if (msg.sys) {
     return (
-      <p className="text-center text-[11px] text-dim">
-        <span className="font-medium text-muted-foreground">{msg.peer.name}</span>{' '}
-        {msg.body}
+      <p className="text-xs text-dim">
+        {msg.peer.name} {msg.body}
         <span className="font-mono"> - {timestamp(msg.ts)}</span>
       </p>
     )

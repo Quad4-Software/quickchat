@@ -33,9 +33,9 @@ export interface FileProgress {
   total: number
 }
 
-// PeerLink is the health of the direct datachannel to one peer, shown
-// as a status dot in the chat roster. It is independent of signaling:
-// open links keep working through a signaling outage.
+// PeerLink is the health of the direct datachannel to one peer. It is
+// independent of signaling: open links keep working through a
+// signaling outage.
 export type PeerLink = 'connecting' | 'open' | 'closed'
 
 export interface MeshHandlers {

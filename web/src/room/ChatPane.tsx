@@ -554,24 +554,7 @@ export default function ChatPane({
           className="min-w-0 flex-1 truncate text-xs text-dim"
           title={peers.map((p) => p.name).join(', ')}
         >
-          {peers.map((p, i) => (
-            <span key={p.id}>
-              {i > 0 && ', '}
-              <span
-                className={cn(
-                  'inline-block size-1.5 rounded-full align-middle',
-                  links[p.id] === 'open'
-                    ? 'bg-success'
-                    : links[p.id] === 'connecting'
-                      ? 'bg-warning'
-                      : 'bg-destructive',
-                )}
-                title={`${p.name}: ${links[p.id] ?? 'no link'}`}
-                aria-hidden
-              />{' '}
-              {p.name}
-            </span>
-          ))}
+          {peers.map((p) => p.name).join(', ')}
         </span>
         {'Notification' in window && (
           <button
@@ -607,7 +590,7 @@ export default function ChatPane({
         <span
           role="status"
           className={cn(
-            'flex shrink-0 items-center gap-1 font-mono text-[10px]',
+            'shrink-0 font-mono text-[10px]',
             conn.status === 'online'
               ? 'text-success'
               : conn.status === 'offline'
@@ -615,12 +598,6 @@ export default function ChatPane({
                 : 'text-warning',
           )}
         >
-          {conn.status !== 'online' &&
-            (conn.status === 'offline' ? (
-              <WifiOff className="size-3" aria-hidden />
-            ) : (
-              <LoaderCircle className="size-3 animate-spin" aria-hidden />
-            ))}
           {conn.status}
         </span>
       </div>
