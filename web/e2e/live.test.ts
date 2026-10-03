@@ -169,9 +169,17 @@ test('soundboard pad publishes and logs the play', async ({ page }) => {
     timeout: 20_000,
   })
 
-  await page.getByRole('button', { name: 'soundboard' }).click()
+  const pad = page.getByRole('button', { name: 'soundboard' })
+  await pad.click()
   const board = page.getByRole('dialog', { name: 'soundboard' })
   await expect(board).toBeVisible()
+  // the dialog anchors to its trigger, not a viewport corner
+  const bb = (await pad.boundingBox())!
+  const db = (await board.boundingBox())!
+  expect(Math.abs(db.x + db.width - (bb.x + bb.width))).toBeLessThan(24)
+  expect(db.y + db.height).toBeLessThanOrEqual(bb.y + 4)
+  // pads carry icons
+  await expect(board.getByRole('button', { name: 'ding' }).locator('svg')).toBeVisible()
   await board.getByRole('button', { name: 'ding' }).click()
 
   // the play lands in the chat log as a system line

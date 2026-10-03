@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { QrCode, Share2 } from 'lucide-react'
+import { Copy, QrCode, Share2 } from 'lucide-react'
 import { renderSVG } from 'uqr'
 
-// ShareLink offers the native share sheet when available, plus a qr
-// code so a phone can jump into the room by camera
+// ShareLink shows the room link as a qr code so a second device can
+// join by camera, plus the native share sheet when the os offers one
 export default function ShareLink({ url }: { url: string }) {
   const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   useEffect(() => {
     if (!open) return
     const close = (e: PointerEvent) => {
@@ -23,44 +26,74 @@ export default function ShareLink({ url }: { url: string }) {
     }
   }, [open])
 
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      // fixed positioning escapes overflow-hidden ancestors that would
+      // clip an absolute popover, the header sits at the top so the
+      // dialog drops below it
+      setPos({
+        top: r.bottom + 8,
+        right: window.innerWidth - r.right,
+      })
+    }
+    setOpen(!open)
+  }
+
   const native = typeof navigator.share === 'function'
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref}>
       <button
-        onClick={() => {
-          if (native) {
-            void navigator.share({ title: 'quickchat room', url }).catch(() => {})
-          } else {
-            setOpen(!open)
-          }
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          setOpen(!open)
-        }}
+        ref={btnRef}
+        onClick={toggle}
         aria-label="share room"
-        aria-expanded={native ? undefined : open}
-        title={native ? 'share room' : 'share or scan the qr code'}
+        aria-expanded={open}
+        title="share room"
         className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground"
       >
         <Share2 className="size-3.5" aria-hidden />
         <span className="hidden sm:inline">share</span>
       </button>
-      {!native && open && (
+      {open && pos && (
         <div
           role="dialog"
           aria-label="room qr code"
-          className="absolute right-0 top-full z-20 mt-1.5 w-56 rounded-md border border-border bg-card p-3 shadow-md"
+          style={{ top: pos.top, right: pos.right }}
+          className="fixed z-50 w-56 rounded-md border border-border bg-card p-3 shadow-md"
         >
           <div
-            className="mx-auto w-fit rounded-md bg-white p-2 [&>svg]:block"
-            // uqr emits svg markup for the room url
+            className="mx-auto rounded-md bg-white p-2 [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
             dangerouslySetInnerHTML={{ __html: renderSVG(url) }}
           />
           <p className="flex items-center justify-center gap-1.5 pt-2 text-center text-[10px] text-dim">
             <QrCode className="size-3" aria-hidden />
             scan to join
           </p>
+          <div className="flex gap-1.5 pt-2">
+            <button
+              onClick={() => {
+                void navigator.clipboard.writeText(url).catch(() => {})
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1200)
+              }}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-recessed px-2 py-1.5 text-xs font-medium text-foreground hover:bg-hover"
+            >
+              <Copy className="size-3.5" aria-hidden />
+              {copied ? 'copied' : 'copy link'}
+            </button>
+            {native && (
+              <button
+                onClick={() => {
+                  void navigator.share({ title: 'quickchat room', url }).catch(() => {})
+                  setOpen(false)
+                }}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-recessed px-2 py-1.5 text-xs font-medium text-foreground hover:bg-hover"
+              >
+                <Share2 className="size-3.5" aria-hidden />
+                share
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

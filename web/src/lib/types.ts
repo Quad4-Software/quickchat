@@ -1,6 +1,8 @@
 export interface Peer {
   id: string
   name: string
+  /** data url image, set after the peer broadcasts one */
+  avatar?: string
 }
 
 export interface FileMeta {

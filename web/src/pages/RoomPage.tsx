@@ -11,6 +11,7 @@ import {
   Video,
 } from 'lucide-react'
 import Mark from '../components/Mark'
+import Avatar from '../components/Avatar'
 import ErrorBoundary from '../components/ErrorBoundary'
 import ErrorView from '../components/ErrorView'
 import ChatPane from '../room/ChatPane'
@@ -21,6 +22,7 @@ import { getRoom, livekitToken } from '../lib/api'
 import { cn } from '../lib/cn'
 import { keyFromHash, mediaE2EESupported } from '../lib/e2ee'
 import { randomName } from '../lib/names'
+import { loadProfile, resizeAvatar, saveAvatar } from '../lib/profile'
 import { SITE } from '../lib/site'
 import { useMediaQuery } from '../lib/useMedia'
 import { useVisualViewport } from '../lib/useViewport'
@@ -33,6 +35,8 @@ export default function RoomPage({ id }: { id: string }) {
   const [error, setError] = useState('')
   // the last used name survives a crash reload so rejoining is one click
   const [name, setName] = useState(() => localStorage.getItem('qc-name') ?? '')
+  const [avatar, setAvatar] = useState(() => loadProfile().avatar)
+  const avatarFileRef = useRef<HTMLInputElement>(null)
   const [joined, setJoined] = useState(false)
   const [grant, setGrant] = useState<LiveKitGrant | null>(null)
   const [copied, setCopied] = useState(false)
@@ -207,6 +211,46 @@ export default function RoomPage({ id }: { id: string }) {
             >
               <Dices className="size-4" />
             </button>
+          </div>
+          <div className="flex items-center gap-2 pt-3">
+            <Avatar name={name || '?'} avatar={avatar} className="size-9 text-sm" />
+            <button
+              type="button"
+              onClick={() => avatarFileRef.current?.click()}
+              className="rounded-md border border-border bg-recessed px-2 py-1.5 text-xs font-medium text-foreground hover:bg-hover"
+            >
+              {avatar ? 'change avatar' : 'set avatar'}
+            </button>
+            {avatar && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatar(undefined)
+                  saveAvatar('')
+                }}
+                className="rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-hover"
+              >
+                reset
+              </button>
+            )}
+            <input
+              ref={avatarFileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) {
+                  void resizeAvatar(f)
+                    .then((data) => {
+                      setAvatar(data)
+                      saveAvatar(data)
+                    })
+                    .catch(() => {})
+                }
+                e.target.value = ''
+              }}
+            />
           </div>
           <button
             type="submit"
@@ -384,6 +428,7 @@ export default function RoomPage({ id }: { id: string }) {
                   maxFileSize={info.maxFileSize}
                   onChatActivity={onChatActivity}
                   registerSound={registerSound}
+                  avatar={avatar}
                 />
               </ErrorBoundary>
             )}

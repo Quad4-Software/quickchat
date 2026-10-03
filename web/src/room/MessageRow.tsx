@@ -3,6 +3,7 @@ import { Copy, CornerUpLeft, FileIcon, Loader2, Presentation, Trash2 } from 'luc
 import { fileSize, timestamp } from '../lib/format'
 import { parseMd } from '../lib/markdown'
 import { cn } from '../lib/cn'
+import Avatar from '../components/Avatar'
 import type { ChatMessage, FileRef } from '../lib/types'
 
 const QUICK_REACTS = ['👍', '❤️', '😂', '😮', '😢']
@@ -52,7 +53,8 @@ function MessageRow({
   const hasActions = onReply || onReact || onCopy || onDelete
   return (
     <div className="group min-w-0">
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-center gap-2">
+        <Avatar name={msg.peer.name} avatar={msg.peer.avatar} />
         <span className="truncate text-sm font-semibold text-emphasis">
           {msg.peer.name}
         </span>

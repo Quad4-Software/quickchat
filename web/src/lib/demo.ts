@@ -243,6 +243,14 @@ export class DemoMesh implements ChatSession {
     this.after(900, () => this.h.onSound(peer, name))
   }
 
+  broadcastRename() {
+    // scripted peers already know whatever name gets picked
+  }
+
+  broadcastAvatar() {
+    // scripted peers keep letter tiles, nothing to relay
+  }
+
   broadcastReact(id: string, emoji: string, on: boolean) {
     if (!on) return
     // a scripted peer echoes the emoji back so reaction rows light up

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: 0BSD
 // Soundboard: short sounds published into the livekit room as a
-// temporary audio track so peers hear them alongside the mic. Built
-// ins are synthesized offline so the bundle ships no audio assets.
+// temporary audio track so peers hear them alongside the mic.
+// Built-ins ship as mp3s in public/sounds, sourced from the google
+// assistant sound library (CC-BY 4.0) and transcoded to mp3 for
+// cross-browser decodeAudioData support. A synth fallback covers
+// offline or decode failures.
 import type { Room } from 'livekit-client'
 
 export interface SoundDef {
@@ -10,12 +13,14 @@ export interface SoundDef {
 }
 
 export const SOUNDS: SoundDef[] = [
-  { id: 'airhorn', label: 'air horn' },
-  { id: 'rimshot', label: 'rimshot' },
+  { id: 'siren', label: 'siren' },
+  { id: 'bugle', label: 'bugle' },
+  { id: 'drumroll', label: 'drumroll' },
   { id: 'tada', label: 'ta da' },
   { id: 'ding', label: 'ding' },
-  { id: 'cricket', label: 'cricket' },
-  { id: 'drumroll', label: 'drumroll' },
+  { id: 'pop', label: 'pop' },
+  { id: 'boing', label: 'boing' },
+  { id: 'cowbell', label: 'cowbell' },
 ]
 
 let shared: AudioContext | null = null
@@ -27,14 +32,18 @@ function ctx(): AudioContext {
 
 const rendered = new Map<string, Promise<AudioBuffer>>()
 
-// preset renders a built-in sound in an offline context once and
-// caches the buffer for the life of the page
+// preset fetches the shipped mp3 and falls back to the offline synth
+// render when the file or decoder is unavailable
 export function preset(id: string): Promise<AudioBuffer> {
   let b = rendered.get(id)
   if (!b) {
-    const oc = new OfflineAudioContext(1, 48000 * 2, 48000)
-    build(oc, id)
-    b = oc.startRendering()
+    b = fetch(`${import.meta.env.BASE_URL}sounds/${id}.mp3`)
+      .then((r) => {
+        if (!r.ok) throw new Error('missing sound')
+        return r.arrayBuffer()
+      })
+      .then((d) => ctx().decodeAudioData(d))
+      .catch(() => synth(id))
     rendered.set(id, b)
   }
   return b
@@ -70,7 +79,7 @@ export async function playSound(room: Room, buffer: AudioBuffer): Promise<void> 
   src.start()
 }
 
-// ---- synthesis ----
+// ---- synth fallback ----
 
 type Ctx = OfflineAudioContext
 
@@ -83,7 +92,13 @@ function tone(
     dur,
     gain = 0.25,
     slide,
-  }: { type?: OscillatorType; f: number; dur: number; gain?: number; slide?: number },
+  }: {
+    type?: OscillatorType
+    f: number
+    dur: number
+    gain?: number
+    slide?: number
+  },
 ) {
   const o = oc.createOscillator()
   const g = oc.createGain()
@@ -114,43 +129,24 @@ function noise(oc: Ctx, at: number, dur: number, f: number, gain = 0.25) {
   s.start(at)
 }
 
-function build(oc: Ctx, id: string) {
+function synth(id: string): Promise<AudioBuffer> {
+  const oc = new OfflineAudioContext(1, 48000 * 2, 48000)
   switch (id) {
-    case 'airhorn':
+    case 'siren':
       for (const f of [220, 233, 277])
         tone(oc, 0, { type: 'sawtooth', f, dur: 0.7, gain: 0.18 })
       tone(oc, 0, { type: 'square', f: 110, dur: 0.7, gain: 0.12 })
-      break
-    case 'rimshot': {
-      // ba dum tss: two wood ticks then a cymbal splash
-      noise(oc, 0.05, 0.03, 3500, 0.5)
-      noise(oc, 0.22, 0.03, 3500, 0.5)
-      noise(oc, 0.4, 0.5, 6500, 0.4)
-      break
-    }
-    case 'tada':
-      tone(oc, 0, { f: 523, dur: 0.5, gain: 0.3 })
-      tone(oc, 0.12, { f: 659, dur: 0.5, gain: 0.3 })
-      tone(oc, 0.24, { f: 784, dur: 0.5, gain: 0.3 })
-      tone(oc, 0.36, { f: 1046, dur: 0.6, gain: 0.35 })
       break
     case 'ding':
       tone(oc, 0, { f: 880, dur: 0.7, gain: 0.35 })
       tone(oc, 0, { f: 1760, dur: 0.4, gain: 0.15 })
       break
-    case 'cricket':
-      for (const at of [0, 0.09, 0.18]) {
-        tone(oc, at, { f: 4200, dur: 0.05, gain: 0.2 })
-      }
-      tone(oc, 0.4, { f: 4200, dur: 0.05, gain: 0.2 })
-      break
     case 'drumroll':
-      for (let i = 0; i < 12; i++) {
-        noise(oc, i * 0.055, 0.03, 250, 0.4)
-      }
+      for (let i = 0; i < 12; i++) noise(oc, i * 0.055, 0.03, 250, 0.4)
       noise(oc, 0.7, 0.15, 120, 0.6)
       break
     default:
       tone(oc, 0, { f: 660, dur: 0.3 })
   }
+  return oc.startRendering()
 }

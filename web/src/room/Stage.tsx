@@ -1105,7 +1105,9 @@ function SettingsMenu({
   onSaver?: (() => void) | undefined
 }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ bottom: number; right: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!open) return
     const close = (e: PointerEvent) => {
@@ -1121,15 +1123,28 @@ function SettingsMenu({
       document.removeEventListener('keydown', esc)
     }
   }, [open])
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      // fixed anchoring avoids overflow-hidden clipping and keeps the
+      // menu glued to the gear on every layout
+      setPos({
+        bottom: window.innerHeight - r.top + 8,
+        right: window.innerWidth - r.right,
+      })
+    }
+    setOpen(!open)
+  }
   const kinds: { kind: MediaDeviceKind; label: string }[] = [
     { kind: 'audioinput', label: 'microphone' },
     { kind: 'videoinput', label: 'camera' },
     { kind: 'audiooutput', label: 'speaker' },
   ]
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref}>
       <button
-        onClick={() => setOpen(!open)}
+        ref={btnRef}
+        onClick={toggle}
         aria-label="media settings"
         aria-expanded={open}
         title="media settings"
@@ -1137,11 +1152,12 @@ function SettingsMenu({
       >
         <Settings className="size-4" aria-hidden />
       </button>
-      {open && (
+      {open && pos && (
         <div
           role="dialog"
           aria-label="media settings"
-          className="fixed bottom-20 right-3 z-50 w-64 space-y-3 rounded-md border border-border bg-card p-3 shadow-md"
+          style={{ bottom: pos.bottom, right: pos.right }}
+          className="fixed z-50 w-64 space-y-3 rounded-md border border-border bg-card p-3 shadow-md"
         >
           {kinds.map(({ kind, label }) => {
             const list = devices.filter((d) => d.kind === kind)

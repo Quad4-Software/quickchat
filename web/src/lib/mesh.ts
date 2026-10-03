@@ -17,6 +17,8 @@ type Wire =
   | { t: 'react'; id: string; emoji: string; on: boolean }
   | { t: 'present'; id: string; on: boolean }
   | { t: 'sound'; name: string }
+  | { t: 'rename'; name: string }
+  | { t: 'avatar'; data: string }
 
 // Wire protocol on 'file-<id>' channels: first frame is json meta, then
 // binary chunks, then the sender closes the channel to mark eof.
@@ -60,6 +62,8 @@ export interface MeshHandlers {
   onReact: (peer: Peer, id: string, emoji: string, on: boolean) => void
   onPresent: (peer: Peer, msgId: string, on: boolean) => void
   onSound: (peer: Peer, name: string) => void
+  onRename: (peer: Peer, name: string) => void
+  onAvatar: (peer: Peer, data: string) => void
   onFileProgress: (p: FileProgress) => void
   onFileDone: (fileId: string, msgId: string, peer: Peer, blob: Blob) => void
   onFileError: (fileId: string, msgId: string, peer: Peer, reason: string) => void
@@ -131,6 +135,8 @@ export interface ChatSession {
   broadcastReact(id: string, emoji: string, on: boolean): void
   broadcastPresent(msgId: string, on: boolean): void
   broadcastSound(name: string): void
+  broadcastRename(name: string): void
+  broadcastAvatar(data: string): void
   sendFile(file: Blob, meta: FileMeta, msgId: string): void
   /** per-peer link stats for the debug panel, demo sessions may omit */
   stats?(): Promise<PeerLinkStats[]>
@@ -206,6 +212,16 @@ export class Mesh implements ChatSession {
 
   broadcastSound(name: string) {
     const frame = JSON.stringify({ t: 'sound', name })
+    for (const p of this.conns.values()) this.sendChatFrame(p, frame)
+  }
+
+  broadcastRename(name: string) {
+    const frame = JSON.stringify({ t: 'rename', name })
+    for (const p of this.conns.values()) this.sendChatFrame(p, frame)
+  }
+
+  broadcastAvatar(data: string) {
+    const frame = JSON.stringify({ t: 'avatar', data })
     for (const p of this.conns.values()) this.sendChatFrame(p, frame)
   }
 
@@ -474,6 +490,19 @@ export class Mesh implements ChatSession {
       this.h.onPresent(p.peer, w.id, !!w.on)
     } else if (w.t === 'sound' && typeof w.name === 'string' && w.name) {
       this.h.onSound(p.peer, w.name.slice(0, 64))
+    } else if (w.t === 'rename' && typeof w.name === 'string' && w.name) {
+      // mutate the connection's peer so frames after the rename carry
+      // the new name
+      p.peer.name = w.name.slice(0, 64)
+      this.h.onRename(p.peer, p.peer.name)
+    } else if (
+      w.t === 'avatar' &&
+      typeof w.data === 'string' &&
+      w.data.startsWith('data:image/') &&
+      w.data.length < 40_000
+    ) {
+      p.peer.avatar = w.data
+      this.h.onAvatar(p.peer, w.data)
     } else if (
       w.t === 'react' &&
       typeof w.id === 'string' &&

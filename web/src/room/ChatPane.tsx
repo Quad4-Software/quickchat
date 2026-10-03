@@ -24,10 +24,12 @@ import { useRegisterStats } from '../lib/stats'
 import type { StatRow } from '../lib/stats'
 import { activityBegin, activityEnd } from '../lib/activity'
 import { reactMutate } from '../lib/reactions'
+import { clearProfile, saveAvatar, saveName } from '../lib/profile'
 import { SITE } from '../lib/site'
 import { fileSize } from '../lib/format'
 import { cn } from '../lib/cn'
 import MessageRow from './MessageRow'
+import ProfileEditor from './ProfileEditor'
 import type { ChatMessage, FileMeta, FileRef, Peer, ReplyRef } from '../lib/types'
 
 const toneForIce = (s: RTCIceConnectionState) =>
@@ -82,6 +84,7 @@ export default function ChatPane({
   createSession,
   onChatActivity,
   registerSound,
+  avatar,
 }: {
   room: string
   name: string
@@ -94,6 +97,9 @@ export default function ChatPane({
   // called once so the stage can hand its soundboard a way to broadcast
   // the play event over the chat channel
   registerSound?: ((fn: (label: string) => void) => void) | undefined
+  // remembered avatar from the local profile, rebroadcast to late
+  // joiners and on reconnect
+  avatar?: string | undefined
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
@@ -106,6 +112,7 @@ export default function ChatPane({
   const [body, setBody] = useState('')
   const [selfId, setSelfId] = useState('me')
   const [selfName, setSelfName] = useState(name)
+  const [selfAvatar, setSelfAvatar] = useState(avatar)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [recording, setRecording] = useState<MediaRecorder | null>(null)
@@ -118,6 +125,10 @@ export default function ChatPane({
 
   const meshRef = useRef<ChatSession | null>(null)
   const selfRef = useRef<Peer>({ id: 'me', name })
+  // chosen avatar survives reconnects, and peer avatars are remembered
+  // by id so a re-welcome does not blank the roster
+  const avatarRef = useRef(selfAvatar)
+  const avatarMapRef = useRef(new Map<string, string>())
   // roster mirror for diffs inside handlers, where setPeers functional
   // updates cannot carry side effects
   const peersRef = useRef<Peer[]>([])
@@ -246,26 +257,51 @@ export default function ChatPane({
       maxFileBytes: maxFileSize,
       handlers: {
         onWelcome(self, roster) {
-          selfRef.current = self
+          // a rename mid-room must survive a redial: keep the chosen
+          // name instead of the ws one and announce it again
+          const chosen = selfRef.current.name
+          selfRef.current = {
+            ...self,
+            name: chosen !== 'me' && chosen !== self.name ? chosen : self.name,
+            ...(avatarRef.current ? { avatar: avatarRef.current } : {}),
+          }
           setSelfId(self.id)
-          setSelfName(self.name)
+          setSelfName(selfRef.current.name)
+          const session = meshRef.current
+          if (selfRef.current.name !== self.name)
+            session?.broadcastRename(selfRef.current.name)
+          if (avatarRef.current) session?.broadcastAvatar(avatarRef.current)
+          // restore peer avatars the server roster cannot carry
+          const withAvatars = roster.map((p) => {
+            const av = avatarMapRef.current.get(p.id)
+            return av ? { ...p, avatar: av } : p
+          })
           // peers absent from a post-reconnect roster left during the
           // outage, report it the same as a live peer_left
-          const gone = peersRef.current.filter((p) => !roster.some((r) => r.id === p.id))
-          peersRef.current = roster
-          setPeers(roster)
-          const ids = new Set(roster.map((p) => p.id))
+          const gone = peersRef.current.filter(
+            (p) => !withAvatars.some((r) => r.id === p.id),
+          )
+          peersRef.current = withAvatars
+          setPeers(withAvatars)
+          const ids = new Set(withAvatars.map((p) => p.id))
           setLinks((l) =>
             Object.fromEntries(Object.entries(l).filter(([k]) => ids.has(k))),
           )
           for (const p of gone) appendMessage(sysLine(p, 'leave'))
         },
         onPeerJoined(peer) {
+          const av = avatarMapRef.current.get(peer.id)
+          const full = av ? { ...peer, avatar: av } : peer
           peersRef.current = peersRef.current.some((x) => x.id === peer.id)
             ? peersRef.current
-            : [...peersRef.current, peer]
-          setPeers((p) => (p.some((x) => x.id === peer.id) ? p : [...p, peer]))
+            : [...peersRef.current, full]
+          setPeers((p) => (p.some((x) => x.id === peer.id) ? p : [...p, full]))
           appendMessage(sysLine(peer, 'join'))
+          // late joiners see the ws name, announce the custom one again
+          const session = meshRef.current
+          if (selfRef.current.name !== name)
+            session?.broadcastRename(selfRef.current.name)
+          if (avatarRef.current) session?.broadcastAvatar(avatarRef.current)
         },
         onPeerLeft(peer) {
           peersRef.current = peersRef.current.filter((x) => x.id !== peer.id)
@@ -357,6 +393,23 @@ export default function ChatPane({
         onSound(peer, label) {
           appendMessage(eventLine(peer, `played ${label}`))
           onChatActivity?.()
+        },
+        onRename(peer, next) {
+          const named = { ...peer, name: next }
+          peersRef.current = peersRef.current.map((p) => (p.id === peer.id ? named : p))
+          setPeers((prev) => prev.map((p) => (p.id === peer.id ? named : p)))
+          setMessages((prev) =>
+            prev.map((m) => (m.peer.id === peer.id ? { ...m, peer: named } : m)),
+          )
+        },
+        onAvatar(peer, data) {
+          avatarMapRef.current.set(peer.id, data)
+          const withAv = { ...peer, avatar: data }
+          peersRef.current = peersRef.current.map((p) => (p.id === peer.id ? withAv : p))
+          setPeers((prev) => prev.map((p) => (p.id === peer.id ? withAv : p)))
+          setMessages((prev) =>
+            prev.map((m) => (m.peer.id === peer.id ? { ...m, peer: withAv } : m)),
+          )
         },
         onReact(peer, id, emoji, on) {
           setMessages((prev) =>
@@ -610,6 +663,60 @@ export default function ChatPane({
     })
   }, [])
 
+  // profile edits broadcast over the mesh and restamp the local
+  // messages so the new name shows everywhere it already appeared
+  const restamp = useCallback((patch: { name?: string; avatar?: string | null }) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.peer.id !== selfRef.current.id && m.peer.id !== 'me') return m
+        const peer = { ...m.peer }
+        if (patch.name !== undefined) peer.name = patch.name
+        if (patch.avatar === null) delete peer.avatar
+        else if (patch.avatar !== undefined) peer.avatar = patch.avatar
+        return { ...m, peer }
+      }),
+    )
+  }, [])
+
+  const onSelfRename = useCallback(
+    (next: string) => {
+      const clean = next.trim().slice(0, 24) || selfRef.current.name
+      if (clean === selfRef.current.name) return
+      selfRef.current = { ...selfRef.current, name: clean }
+      setSelfName(clean)
+      saveName(clean)
+      restamp({ name: clean })
+      meshRef.current?.broadcastRename(clean)
+    },
+    [restamp],
+  )
+
+  const onSelfAvatar = useCallback(
+    (data: string) => {
+      avatarRef.current = data || undefined
+      selfRef.current = { ...selfRef.current, ...(data ? { avatar: data } : {}) }
+      if (!data) delete selfRef.current.avatar
+      setSelfAvatar(data || undefined)
+      saveAvatar(data)
+      restamp({ avatar: data || null })
+      if (data) meshRef.current?.broadcastAvatar(data)
+    },
+    [restamp],
+  )
+
+  const onProfileReset = useCallback(() => {
+    clearProfile()
+    avatarRef.current = undefined
+    delete selfRef.current.avatar
+    setSelfAvatar(undefined)
+    restamp({ avatar: null })
+    // the name reverts to whatever the ws was dialed with
+    selfRef.current = { ...selfRef.current, name }
+    setSelfName(name)
+    restamp({ name })
+    meshRef.current?.broadcastRename(name)
+  }, [name, restamp])
+
   function insertEmoji(e: string) {
     const el = composerRef.current
     const at = el ? el.selectionStart : body.length
@@ -780,6 +887,13 @@ export default function ChatPane({
         >
           {peers.map((p) => p.name).join(', ')}
         </span>
+        <ProfileEditor
+          name={selfName}
+          avatar={selfAvatar}
+          onName={onSelfRename}
+          onAvatar={onSelfAvatar}
+          onReset={onProfileReset}
+        />
         {'Notification' in window && (
           <button
             onClick={() => {

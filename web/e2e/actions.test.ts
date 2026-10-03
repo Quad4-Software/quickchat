@@ -209,3 +209,79 @@ test('presenting a pdf opens the briefing on both sides', async ({
   await ctx1.close()
   await ctx2.close()
 })
+
+test('renaming updates the roster and new messages', async ({ browser, browserName }) => {
+  noWebkitMesh(browserName)
+  const ctx1 = await browser.newContext()
+  const ctx2 = await browser.newContext()
+  const alice = await ctx1.newPage()
+  const bob = await ctx2.newPage()
+
+  const roomUrl = await createRoom(alice)
+  await join(alice, roomUrl, 'alice')
+  await join(bob, roomUrl, 'bob')
+
+  await alice.getByRole('button', { name: 'edit profile' }).click()
+  const editor = alice.getByRole('dialog', { name: 'edit profile' })
+  await expect(editor).toBeVisible()
+  await editor.getByLabel('display name').fill('captain')
+  await editor.getByRole('button', { name: 'save' }).click()
+
+  // bob sees the rename in the roster line
+  await expect(bob.getByText('captain').first()).toBeVisible()
+  await sendText(alice, 'new name here')
+  await expect(bob.getByRole('log').getByText('captain')).toBeVisible()
+
+  await ctx1.close()
+  await ctx2.close()
+})
+
+test('avatars broadcast to peers and render on messages', async ({
+  browser,
+  browserName,
+}) => {
+  noWebkitMesh(browserName)
+  const ctx1 = await browser.newContext()
+  const ctx2 = await browser.newContext()
+  const alice = await ctx1.newPage()
+  const bob = await ctx2.newPage()
+
+  const roomUrl = await createRoom(alice)
+  await join(alice, roomUrl, 'alice')
+  await join(bob, roomUrl, 'bob')
+
+  // a 2px red png is enough for the avatar pipeline
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAADklEQVR42mP8z8AARLQBA/8AUwAAAAAASUVORK5CYII=',
+    'base64',
+  )
+  await alice.getByRole('button', { name: 'edit profile' }).click()
+  await alice.getByLabel('avatar image').setInputFiles({
+    name: 'me.png',
+    mimeType: 'image/png',
+    buffer: png,
+  })
+  await alice.getByRole('button', { name: 'edit profile' }).click()
+
+  await sendText(alice, 'avatar check')
+  // bob sees the data url image on the message row
+  await expect(
+    bob.getByRole('log').getByRole('img', { name: 'alice' }).first(),
+  ).toBeVisible({ timeout: 15_000 })
+
+  await ctx1.close()
+  await ctx2.close()
+})
+
+test('qr dialog renders a scannable svg and copy link', async ({ page }) => {
+  const roomUrl = await createRoom(page)
+  await join(page, roomUrl, 'alice')
+  await page.getByRole('button', { name: 'share room' }).click()
+  const dialog = page.getByRole('dialog', { name: 'room qr code' })
+  await expect(dialog).toBeVisible()
+  const svg = dialog.getByRole('img')
+  await expect(svg).toBeVisible()
+  const box = await svg.boundingBox()
+  expect(box && box.width > 50).toBeTruthy()
+  await expect(dialog.getByRole('button', { name: 'copy link' })).toBeVisible()
+})

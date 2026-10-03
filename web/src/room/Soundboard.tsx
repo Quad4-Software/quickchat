@@ -1,7 +1,31 @@
 // SPDX-License-Identifier: 0BSD
 import { useEffect, useRef, useState } from 'react'
-import { Music, Plus, Trash2 } from 'lucide-react'
+import {
+  Bell,
+  Disc3,
+  Drumstick,
+  Megaphone,
+  Music,
+  Music2,
+  PartyPopper,
+  Plus,
+  Siren,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { decodeFile, preset, SOUNDS } from '../lib/soundboard'
+
+const ICONS: Record<string, LucideIcon> = {
+  siren: Siren,
+  bugle: Megaphone,
+  drumroll: Drumstick,
+  tada: PartyPopper,
+  ding: Bell,
+  pop: Sparkles,
+  boing: Music2,
+  cowbell: Disc3,
+}
 
 interface Custom {
   name: string
@@ -36,9 +60,11 @@ export default function Soundboard({
   disabled?: boolean | undefined
 }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ bottom: number; right: number } | null>(null)
   const [customs, setCustoms] = useState<Custom[]>(loadCustoms)
   const [busy, setBusy] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!open) return
@@ -84,10 +110,22 @@ export default function Soundboard({
     rd.readAsDataURL(f)
   }
 
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({
+        bottom: window.innerHeight - r.top + 8,
+        right: window.innerWidth - r.right,
+      })
+    }
+    setOpen(!open)
+  }
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref}>
       <button
-        onClick={() => setOpen(!open)}
+        ref={btnRef}
+        onClick={toggle}
         aria-label="soundboard"
         aria-expanded={open}
         title="soundboard"
@@ -95,22 +133,27 @@ export default function Soundboard({
       >
         <Music className="size-4" aria-hidden />
       </button>
-      {open && (
+      {open && pos && (
         <div
           role="dialog"
           aria-label="soundboard"
-          className="fixed bottom-20 right-3 z-50 grid w-56 grid-cols-2 gap-1.5 rounded-md border border-border bg-card p-2 shadow-md"
+          style={{ bottom: pos.bottom, right: pos.right }}
+          className="fixed z-50 grid w-56 grid-cols-2 gap-1.5 rounded-md border border-border bg-card p-2 shadow-md"
         >
-          {SOUNDS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => hit('preset', { id: s.id, name: s.label })}
-              disabled={Boolean(disabled) || busy === s.label}
-              className="rounded-md border border-border bg-recessed px-2 py-2 text-xs font-medium text-foreground hover:bg-hover disabled:opacity-50"
-            >
-              {busy === s.label ? 'playing' : s.label}
-            </button>
-          ))}
+          {SOUNDS.map((s) => {
+            const Icon = ICONS[s.id] ?? Music
+            return (
+              <button
+                key={s.id}
+                onClick={() => hit('preset', { id: s.id, name: s.label })}
+                disabled={Boolean(disabled) || busy === s.label}
+                className="flex flex-col items-center gap-1 rounded-md border border-border bg-recessed px-2 py-2 text-xs font-medium text-foreground hover:bg-hover disabled:opacity-50"
+              >
+                <Icon className="size-4" aria-hidden />
+                {busy === s.label ? 'playing' : s.label}
+              </button>
+            )
+          })}
           {customs.map((s) => (
             <div key={s.name} className="group relative">
               <button
