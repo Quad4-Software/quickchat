@@ -48,7 +48,28 @@ builds:
       - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
     skip: '{{ if ne .Env.DESKTOP_TARGET "windows" }}true{{ end }}'
 
-  - id: desktop-darwin
+  - id: desktop-darwin-amd64
+    main: ./cmd/desktop
+    binary: quickchat
+    env:
+      - CGO_ENABLED=1
+      # clang on apple silicon defaults to the host arch so the amd64
+      # cross build must spell out -arch for the objc side
+      - CC=clang -arch x86_64
+      - CXX=clang++ -arch x86_64
+    goos:
+      - darwin
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
+      - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
+    skip: '{{ if ne .Env.DESKTOP_TARGET "darwin" }}true{{ end }}'
+
+  - id: desktop-darwin-arm64
     main: ./cmd/desktop
     binary: quickchat
     env:
@@ -56,7 +77,6 @@ builds:
     goos:
       - darwin
     goarch:
-      - amd64
       - arm64
     flags:
       - -trimpath
@@ -64,17 +84,6 @@ builds:
       - -s -w
       - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
       - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
-    # clang on apple silicon needs the target arch spelled out or the
-    # objc side compiles for the host arch and the link fails
-    compilers:
-      - goos: darwin
-        goarch: amd64
-        cc: clang -arch x86_64
-        cxx: clang++ -arch x86_64
-      - goos: darwin
-        goarch: arm64
-        cc: clang -arch arm64
-        cxx: clang++ -arch arm64
     skip: '{{ if ne .Env.DESKTOP_TARGET "darwin" }}true{{ end }}'
 
 archives:
