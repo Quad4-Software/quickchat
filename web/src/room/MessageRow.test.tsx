@@ -90,16 +90,34 @@ describe('MessageRow', () => {
           ...base,
           file: {
             id: 'f1',
-            name: 'report.pdf',
+            name: 'report.txt',
             size: 1024,
+            mime: 'text/plain',
+            url: 'blob:fake',
+          },
+        }}
+      />,
+    )
+    const link = screen.getByRole('link', { name: /report\.txt/ })
+    expect(link.getAttribute('download')).toBe('report.txt')
+    expect(link.getAttribute('href')).toBe('blob:fake')
+  })
+
+  it('pdf files render an inline preview frame', () => {
+    render(
+      <MessageRow
+        msg={{
+          ...base,
+          file: {
+            id: 'f2',
+            name: 'deck.pdf',
+            size: 2048,
             mime: 'application/pdf',
             url: 'blob:fake',
           },
         }}
       />,
     )
-    const link = screen.getByRole('link', { name: /report\.pdf/ })
-    expect(link.getAttribute('download')).toBe('report.pdf')
-    expect(link.getAttribute('href')).toBe('blob:fake')
+    expect(screen.getByTitle('deck.pdf')).toBeTruthy()
   })
 })

@@ -71,6 +71,38 @@ function demoImage(): Promise<Blob> {
   })
 }
 
+// demoPdf writes a tiny two page deck with a real xref table so the
+// native pdf viewer accepts it
+function demoPdf(): Blob {
+  const enc = new TextEncoder()
+  const lines = ['briefing deck - page 1 of 2', 'page 2 of 2 - nothing hits the server']
+  const objs = [
+    '<</Type/Catalog/Pages 2 0 R>>',
+    '<</Type/Pages/Kids[3 0 R 5 0 R]/Count 2>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 7 0 R>>>>>>',
+    '',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 6 0 R/Resources<</Font<</F1 7 0 R>>>>>>',
+    '',
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+  ]
+  lines.forEach((text, i) => {
+    const stream = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET\n`
+    objs[3 + i * 2] = `<</Length ${stream.length}>>stream\n${stream}endstream`
+  })
+  let out = '%PDF-1.4\n'
+  const offs = objs.map((obj, i) => {
+    const at = enc.encode(out).length
+    out += `${i + 1} 0 obj\n${obj}\nendobj\n`
+    return at
+  })
+  const xrefAt = enc.encode(out).length
+  const xref =
+    `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` +
+    offs.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')
+  out += `${xref}trailer\n<</Size ${objs.length + 1}/Root 1 0 R>>\nstartxref\n${xrefAt}\n%%EOF`
+  return new Blob([out], { type: 'application/pdf' })
+}
+
 export class DemoMesh implements ChatSession {
   private h: MeshHandlers
   private self: Peer
@@ -109,19 +141,30 @@ export class DemoMesh implements ChatSession {
       })
       at += s.delay
     }
-    // rex sends an image so previews and blob handling are exercised
+    // rex sends an image so previews and blob handling are exercised,
+    // nova follows with a deck so the briefing viewer shows too
     this.after(at + 1200, () => void this.seedFile(PEERS[1]))
+    this.after(at + 2600, () => this.seedPdf(PEERS[0]))
+  }
+
+  private seedPdf(peer: Peer) {
+    const blob = demoPdf()
+    this.deliver(peer, blob, 'briefing.pdf')
   }
 
   private async seedFile(peer: Peer) {
     const blob = await demoImage()
+    this.deliver(peer, blob, 'quickchat.png')
+  }
+
+  private deliver(peer: Peer, blob: Blob, name: string) {
     const msgId = `demo-${newNonce()}`
     const fileId = newNonce()
     const meta = {
       id: fileId,
-      name: 'quickchat.png',
+      name,
       size: blob.size,
-      mime: blob.type || 'image/png',
+      mime: blob.type || 'application/octet-stream',
     }
     this.h.onChat({ id: msgId, peer, ts: Date.now(), file: meta })
     // a couple of progress ticks so the download state is visible
@@ -184,6 +227,20 @@ export class DemoMesh implements ChatSession {
 
   broadcastDelete() {
     // scripted peers never unsend, nothing to relay
+  }
+
+  broadcastPresent(msgId: string, on: boolean) {
+    if (!on) return
+    // a scripted peer pretends to join the deck so the briefing view
+    // shows a second viewer
+    void msgId
+  }
+
+  broadcastSound(name: string) {
+    // echo the event back as a scripted peer so the sys line shows the
+    // remote form too
+    const peer = PEERS[this.replyIdx % PEERS.length]
+    this.after(900, () => this.h.onSound(peer, name))
   }
 
   broadcastReact(id: string, emoji: string, on: boolean) {

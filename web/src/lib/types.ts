@@ -45,8 +45,8 @@ export interface ChatMessage {
   deleted?: boolean
   /** local only: sending in progress */
   pending?: boolean
-  /** local only: presence line rendered as a system event, not a chat */
-  sys?: 'join' | 'leave'
+  /** local only: presence or event line rendered as system text, not a chat */
+  sys?: 'join' | 'leave' | 'event'
 }
 
 export interface RoomInfo {

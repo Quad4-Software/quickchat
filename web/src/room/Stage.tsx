@@ -49,6 +49,8 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { playSound } from '../lib/soundboard'
+import Soundboard from './Soundboard'
 import { gridLayout } from '../lib/grid'
 import { useElementSize } from '../lib/useElementSize'
 import { useRegisterStats } from '../lib/stats'
@@ -70,6 +72,7 @@ function Stage({
   onDebug,
   debugOpen,
   compact,
+  onSound,
 }: {
   grant: LiveKitGrant
   e2eeKey?: string | null
@@ -78,6 +81,8 @@ function Stage({
   // compact collapses the stage to a tile strip so chat keeps the
   // screen on small viewports, the parent decides when to apply it
   compact?: boolean | undefined
+  // fired with the pad label so chat can log the play
+  onSound?: ((label: string) => void) | undefined
 }) {
   // the key arrives via URL fragment and is set once, it never reaches the
   // server. webAudioMix routes remote tracks through sdk-managed gain
@@ -130,6 +135,7 @@ function Stage({
         onDebug={onDebug}
         debugOpen={debugOpen}
         compact={compact}
+        onSound={onSound}
       />
       <RoomAudioRenderer />
     </LiveKitRoom>
@@ -153,11 +159,13 @@ function StageInner({
   onDebug,
   debugOpen,
   compact,
+  onSound,
 }: {
   serverUrl: string
   token: string
   onDebug?: (() => void) | undefined
   debugOpen?: boolean | undefined
+  onSound?: ((label: string) => void) | undefined
   compact?: boolean | undefined
 }) {
   const room = useRoomContext()
@@ -408,6 +416,17 @@ function StageInner({
     setSaver(next)
     localStorage.setItem('qc-saver', next ? '1' : '0')
   }
+
+  // soundboard pads publish a temp audio track and report the label
+  // back to chat so the play shows up in the log
+  const onPad = useCallback(
+    (buf: AudioBuffer, label: string) => {
+      void playSound(room, buf)
+        .then(() => onSound?.(label))
+        .catch(() => {})
+    },
+    [room, onSound],
+  )
 
   useEffect(() => {
     const onErr = (err: Error, kind?: MediaDeviceKind) => {
@@ -723,6 +742,8 @@ function StageInner({
         devices={devices}
         chosen={chosen}
         onDevice={onDevice}
+        onPad={onPad}
+        connected={roomState === 'connected'}
       />
     </div>
   )
@@ -930,6 +951,8 @@ function Controls({
   devices,
   chosen,
   onDevice,
+  onPad,
+  connected,
 }: {
   view: View
   onView: (v: View) => void
@@ -948,6 +971,8 @@ function Controls({
   devices?: MediaDeviceInfo[] | undefined
   chosen?: Record<string, string> | undefined
   onDevice?: ((kind: MediaDeviceKind, id: string) => void) | undefined
+  onPad?: ((buf: AudioBuffer, label: string) => void) | undefined
+  connected?: boolean | undefined
 }) {
   return (
     <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -1021,6 +1046,7 @@ function Controls({
           <Activity className="size-4" aria-hidden />
         </button>
       )}
+      {onPad && <Soundboard onPlay={onPad} disabled={!connected} />}
       {onDevice && (
         <SettingsMenu
           devices={devices ?? []}

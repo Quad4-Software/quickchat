@@ -15,6 +15,8 @@ type Wire =
   | { t: 'typing'; on: boolean }
   | { t: 'delete'; id: string }
   | { t: 'react'; id: string; emoji: string; on: boolean }
+  | { t: 'present'; id: string; on: boolean }
+  | { t: 'sound'; name: string }
 
 // Wire protocol on 'file-<id>' channels: first frame is json meta, then
 // binary chunks, then the sender closes the channel to mark eof.
@@ -56,6 +58,8 @@ export interface MeshHandlers {
   onTyping: (peer: Peer, typing: boolean) => void
   onDelete: (peer: Peer, id: string) => void
   onReact: (peer: Peer, id: string, emoji: string, on: boolean) => void
+  onPresent: (peer: Peer, msgId: string, on: boolean) => void
+  onSound: (peer: Peer, name: string) => void
   onFileProgress: (p: FileProgress) => void
   onFileDone: (fileId: string, msgId: string, peer: Peer, blob: Blob) => void
   onFileError: (fileId: string, msgId: string, peer: Peer, reason: string) => void
@@ -125,6 +129,8 @@ export interface ChatSession {
   broadcastTyping(on: boolean): void
   broadcastDelete(id: string): void
   broadcastReact(id: string, emoji: string, on: boolean): void
+  broadcastPresent(msgId: string, on: boolean): void
+  broadcastSound(name: string): void
   sendFile(file: Blob, meta: FileMeta, msgId: string): void
   /** per-peer link stats for the debug panel, demo sessions may omit */
   stats?(): Promise<PeerLinkStats[]>
@@ -190,6 +196,16 @@ export class Mesh implements ChatSession {
 
   broadcastReact(id: string, emoji: string, on: boolean) {
     const frame = JSON.stringify({ t: 'react', id, emoji, on })
+    for (const p of this.conns.values()) this.sendChatFrame(p, frame)
+  }
+
+  broadcastPresent(msgId: string, on: boolean) {
+    const frame = JSON.stringify({ t: 'present', id: msgId, on })
+    for (const p of this.conns.values()) this.sendChatFrame(p, frame)
+  }
+
+  broadcastSound(name: string) {
+    const frame = JSON.stringify({ t: 'sound', name })
     for (const p of this.conns.values()) this.sendChatFrame(p, frame)
   }
 
@@ -454,6 +470,10 @@ export class Mesh implements ChatSession {
       this.h.onTyping(p.peer, !!w.on)
     } else if (w.t === 'delete' && typeof w.id === 'string' && w.id) {
       this.h.onDelete(p.peer, w.id)
+    } else if (w.t === 'present' && typeof w.id === 'string' && w.id) {
+      this.h.onPresent(p.peer, w.id, !!w.on)
+    } else if (w.t === 'sound' && typeof w.name === 'string' && w.name) {
+      this.h.onSound(p.peer, w.name.slice(0, 64))
     } else if (
       w.t === 'react' &&
       typeof w.id === 'string' &&

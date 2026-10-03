@@ -64,6 +64,13 @@ export default function RoomPage({ id }: { id: string }) {
     // only count activity that arrives while the stage has the screen
     setChatBadge(0)
   }, [])
+  // the soundboard lives in the stage but logs its plays through the
+  // chat channel, so chat registers the broadcaster here
+  const soundRef = useRef<((label: string) => void) | null>(null)
+  const registerSound = useCallback((fn: (label: string) => void) => {
+    soundRef.current = fn
+  }, [])
+  const onSound = useCallback((label: string) => soundRef.current?.(label), [])
   // read once at mount: the fragment carries the shared media key and is
   // stable for the lifetime of the page
   const [e2eeKey] = useState(() => keyFromHash(location.hash))
@@ -323,6 +330,7 @@ export default function RoomPage({ id }: { id: string }) {
                     onDebug={toggleDebug}
                     debugOpen={debug}
                     compact={!isMd && focus === 'chat'}
+                    onSound={onSound}
                   />
                 </Suspense>
               </ErrorBoundary>
@@ -375,6 +383,7 @@ export default function RoomPage({ id }: { id: string }) {
                   iceServers={info.iceServers ?? []}
                   maxFileSize={info.maxFileSize}
                   onChatActivity={onChatActivity}
+                  registerSound={registerSound}
                 />
               </ErrorBoundary>
             )}

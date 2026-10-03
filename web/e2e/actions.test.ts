@@ -145,3 +145,67 @@ test('emoji picker inserts into the composer', async ({ page }) => {
     .click()
   await expect(page.getByRole('textbox', { name: 'message' })).toHaveValue('🔥')
 })
+
+test('typing shows the peer name and bouncing dots', async ({ browser, browserName }) => {
+  noWebkitMesh(browserName)
+  const ctx1 = await browser.newContext()
+  const ctx2 = await browser.newContext()
+  const alice = await ctx1.newPage()
+  const bob = await ctx2.newPage()
+
+  const roomUrl = await createRoom(alice)
+  await join(alice, roomUrl, 'alice')
+  await join(bob, roomUrl, 'bob')
+
+  await bob.getByRole('textbox', { name: 'message' }).fill('still going')
+  const line = alice.getByRole('log').getByText('bob is typing')
+  await expect(line).toBeVisible()
+  await expect(alice.locator('.typing-dot')).toHaveCount(3)
+
+  await ctx1.close()
+  await ctx2.close()
+})
+
+test('presenting a pdf opens the briefing on both sides', async ({
+  browser,
+  browserName,
+}) => {
+  noWebkitMesh(browserName)
+  const ctx1 = await browser.newContext()
+  const ctx2 = await browser.newContext()
+  const alice = await ctx1.newPage()
+  const bob = await ctx2.newPage()
+
+  const roomUrl = await createRoom(alice)
+  await join(alice, roomUrl, 'alice')
+  await join(bob, roomUrl, 'bob')
+  await sendText(bob, 'ping')
+  await expect(alice.getByRole('log').getByText('ping')).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // a stub pdf is enough: the briefing renders the blob url either way
+  await alice.getByLabel('choose files to send').setInputFiles({
+    name: 'deck.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.1\n1 0 obj<<>>endobj\ntrailer<<>>\n'),
+  })
+
+  await bob.getByRole('log').getByText('deck.pdf').hover()
+  await alice.getByRole('log').getByText('deck.pdf').hover()
+  await alice.getByRole('button', { name: 'present' }).first().click()
+
+  await expect(alice.getByRole('dialog', { name: 'briefing' })).toBeVisible()
+  await expect(
+    alice.getByRole('dialog', { name: 'briefing' }).getByText('you are presenting'),
+  ).toBeVisible()
+  await expect(
+    bob.getByRole('dialog', { name: 'briefing' }).getByText('alice is presenting'),
+  ).toBeVisible()
+
+  await alice.getByRole('button', { name: 'close briefing' }).click()
+  await expect(bob.getByRole('dialog', { name: 'briefing' })).not.toBeVisible()
+
+  await ctx1.close()
+  await ctx2.close()
+})

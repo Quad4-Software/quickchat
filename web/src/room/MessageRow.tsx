@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Copy, CornerUpLeft, FileIcon, Loader2, Trash2 } from 'lucide-react'
+import { Copy, CornerUpLeft, FileIcon, Loader2, Presentation, Trash2 } from 'lucide-react'
 import { fileSize, timestamp } from '../lib/format'
 import { parseMd } from '../lib/markdown'
 import { cn } from '../lib/cn'
@@ -12,6 +12,7 @@ export interface RowActions {
   onReact?: ((msg: ChatMessage, emoji: string) => void) | undefined
   onCopy?: ((msg: ChatMessage) => void) | undefined
   onDelete?: ((msg: ChatMessage) => void) | undefined
+  onPresent?: ((msg: ChatMessage) => void) | undefined
 }
 
 // memoized so a typing tick or an unrelated message append does not
@@ -24,6 +25,7 @@ function MessageRow({
   onReact,
   onCopy,
   onDelete,
+  onPresent,
 }: {
   msg: ChatMessage
   /** true when the local user sent this message */
@@ -65,6 +67,11 @@ function MessageRow({
                   <span aria-hidden>{e}</span>
                 </ActionBtn>
               ))}
+            {msg.file?.mime === 'application/pdf' && onPresent && (
+              <ActionBtn label="present" onClick={() => onPresent(msg)}>
+                <Presentation className="size-3" aria-hidden />
+              </ActionBtn>
+            )}
             {onReply && (
               <ActionBtn label="reply" onClick={() => onReply(msg)}>
                 <CornerUpLeft className="size-3" aria-hidden />
@@ -218,6 +225,21 @@ function FileCard({ file }: { file: FileRef }) {
           className="max-h-56 max-w-full rounded-md border border-border"
         />
       </a>
+    )
+  }
+  if (file.url && file.mime === 'application/pdf') {
+    return (
+      <div className="mt-1 w-fit max-w-full">
+        <iframe
+          src={file.url}
+          title={file.name}
+          loading="lazy"
+          className="h-44 w-72 max-w-full rounded-md border border-border bg-white"
+        />
+        <p className="pt-0.5 font-mono text-[10px] text-dim">
+          {file.name} - {fileSize(file.size)}
+        </p>
+      </div>
     )
   }
   if (file.url && file.mime.startsWith('audio/')) {

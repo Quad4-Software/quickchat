@@ -161,6 +161,25 @@ test('media settings shows devices and swaps mic for ptt', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'hold to talk' })).toBeVisible()
 })
 
+test('soundboard pad publishes and logs the play', async ({ page }) => {
+  const roomUrl = await createRoom(page)
+  await join(page, roomUrl, 'alice')
+  await page.getByRole('button', { name: 'microphone' }).waitFor({
+    state: 'visible',
+    timeout: 20_000,
+  })
+
+  await page.getByRole('button', { name: 'soundboard' }).click()
+  const board = page.getByRole('dialog', { name: 'soundboard' })
+  await expect(board).toBeVisible()
+  await board.getByRole('button', { name: 'ding' }).click()
+
+  // the play lands in the chat log as a system line
+  await expect(page.getByRole('log').getByText('played ding')).toBeVisible({
+    timeout: 10_000,
+  })
+})
+
 test('debug panel shows livekit media stats', async ({ page }) => {
   const roomUrl = await createRoom(page)
   await join(page, roomUrl, 'alice')

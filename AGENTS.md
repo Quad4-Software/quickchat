@@ -81,8 +81,10 @@ Software.
   signal {from, data}
 - ws frames (client): signal {to, data} where data is sdp or ice
 - 'chat' datachannel (json): {t:chat, id, body?, file?, ts, reply?},
-  {t:typing, on}, {t:delete, id}, {t:react, id, emoji, on}. reply is a
-  denormalized quote {id, name, body?|file?} since nothing is stored.
+  {t:typing, on}, {t:delete, id}, {t:react, id, emoji, on},
+  {t:present, id, on}, {t:sound, name}. reply is a denormalized quote
+  {id, name, body?|file?} since nothing is stored. present toggles the
+  shared deck viewer on the pdf message id. sound logs a soundboard play.
 - 'file-<id>' datachannel: first frame json header {id,msgId,name,size,
   mime}, then binary chunks, sender closes for eof
 - Glare is resolved by perfect negotiation: the peer with the

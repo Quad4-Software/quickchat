@@ -158,3 +158,18 @@ a,
   height: 100dvh;
   overflow: hidden;
 }
+
+/* typing indicator dots, staggered like discord */
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+.typing-dot {
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}

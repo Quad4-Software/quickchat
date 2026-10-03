@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   Mic,
   Paperclip,
+  Presentation,
   SendHorizonal,
   Smile,
   Square,
@@ -62,6 +63,17 @@ function sysLine(peer: Peer, kind: 'join' | 'leave'): ChatMessage {
   }
 }
 
+// one-off room events like a soundboard play render the same way
+function eventLine(peer: Peer, body: string): ChatMessage {
+  return {
+    id: `sys-${peer.id}-${newNonce()}`,
+    peer,
+    body,
+    ts: Date.now(),
+    sys: 'event',
+  }
+}
+
 export default function ChatPane({
   room,
   name,
@@ -69,6 +81,7 @@ export default function ChatPane({
   maxFileSize,
   createSession,
   onChatActivity,
+  registerSound,
 }: {
   room: string
   name: string
@@ -78,6 +91,9 @@ export default function ChatPane({
   createSession?: (opts: MeshOptions) => ChatSession
   // fired for each remote chat event so a collapsed parent can badge
   onChatActivity?: (() => void) | undefined
+  // called once so the stage can hand its soundboard a way to broadcast
+  // the play event over the chat channel
+  registerSound?: ((fn: (label: string) => void) => void) | undefined
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [peers, setPeers] = useState<Peer[]>([])
@@ -93,6 +109,9 @@ export default function ChatPane({
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [recording, setRecording] = useState<MediaRecorder | null>(null)
+  // a live briefing shared over the chat channel; msgId points at the
+  // message carrying the deck blob
+  const [deck, setDeck] = useState<{ msgId: string; by: string } | null>(null)
   const [notify, setNotify] = useState<NotificationPermission>(() =>
     'Notification' in window ? Notification.permission : 'denied',
   )
@@ -332,6 +351,13 @@ export default function ChatPane({
         onDelete(_peer, id) {
           tombstone(id)
         },
+        onPresent(peer, msgId, on) {
+          setDeck(on ? { msgId, by: peer.name } : null)
+        },
+        onSound(peer, label) {
+          appendMessage(eventLine(peer, `played ${label}`))
+          onChatActivity?.()
+        },
         onReact(peer, id, emoji, on) {
           setMessages((prev) =>
             prev.map((m) =>
@@ -431,6 +457,16 @@ export default function ChatPane({
       window.clearTimeout(t)
     }
   }, [conn.status, room])
+
+  // the stage soundboard broadcasts through the chat channel so every
+  // peer sees who hit the pad
+  useEffect(() => {
+    registerSound?.((label: string) => {
+      meshRef.current?.broadcastSound(label)
+      const line = eventLine(selfRef.current, `played ${label}`)
+      setMessages((prev) => [...prev.slice(-MAX_MESSAGES + 1), line])
+    })
+  }, [registerSound])
 
   // unread count in the tab title while the page is hidden
   useEffect(() => {
@@ -556,6 +592,22 @@ export default function ChatPane({
   const onReplyMsg = useCallback((msg: ChatMessage) => {
     setReplyTo(msg)
     composerRef.current?.focus()
+  }, [])
+
+  // presenting a deck broadcasts so every peer's viewer opens; closing
+  // broadcasts off only when this client is the presenter
+  const onPresentMsg = useCallback((msg: ChatMessage) => {
+    meshRef.current?.broadcastPresent(msg.id, true)
+    setDeck({ msgId: msg.id, by: selfRef.current.name })
+  }, [])
+
+  const closeDeck = useCallback(() => {
+    setDeck((d) => {
+      if (d?.by === selfRef.current.name) {
+        meshRef.current?.broadcastPresent(d.msgId, false)
+      }
+      return null
+    })
   }, [])
 
   function insertEmoji(e: string) {
@@ -832,12 +884,32 @@ export default function ChatPane({
               onReact={onReactMsg}
               onCopy={onCopyMsg}
               onDelete={onDeleteMsg}
+              onPresent={onPresentMsg}
             />
           ))}
           {typing.length > 0 && (
-            <p className="text-xs text-muted-foreground" aria-live="off">
-              {typing.map((p) => p.name).join(', ')} {typing.length === 1 ? 'is' : 'are'}{' '}
-              typing...
+            <p
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              aria-live="off"
+            >
+              <span className="truncate">
+                {typing.map((p) => p.name).join(', ')}{' '}
+                {typing.length === 1 ? 'is' : 'are'} typing
+              </span>
+              <span className="flex items-end gap-0.5 pb-0.5" aria-hidden>
+                <span
+                  className="typing-dot size-1 rounded-full bg-muted-foreground"
+                  style={{ animationDelay: '0ms' }}
+                />
+                <span
+                  className="typing-dot size-1 rounded-full bg-muted-foreground"
+                  style={{ animationDelay: '150ms' }}
+                />
+                <span
+                  className="typing-dot size-1 rounded-full bg-muted-foreground"
+                  style={{ animationDelay: '300ms' }}
+                />
+              </span>
             </p>
           )}
         </div>
@@ -850,6 +922,50 @@ export default function ChatPane({
             {unread} new
           </button>
         )}
+        {deck &&
+          (() => {
+            const msg = messages.find((m) => m.id === deck.msgId)
+            const url = msg?.file?.url
+            return (
+              <div
+                role="dialog"
+                aria-label="briefing"
+                className="absolute inset-0 z-10 flex flex-col bg-background/95"
+              >
+                <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
+                  <Presentation
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {deck.by === selfName
+                      ? 'you are presenting'
+                      : `${deck.by} is presenting`}
+                    {msg?.file ? ` - ${msg.file.name}` : ''}
+                  </span>
+                  <button
+                    onClick={closeDeck}
+                    aria-label="close briefing"
+                    className="rounded-md border border-border bg-card px-2 py-0.5 font-medium text-foreground hover:bg-hover"
+                  >
+                    close
+                  </button>
+                </div>
+                {url ? (
+                  <iframe
+                    src={url}
+                    title={msg?.file?.name ?? 'briefing'}
+                    className="min-h-0 flex-1"
+                  />
+                ) : (
+                  <p className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                    {msg?.file?.failed ?? 'waiting for the deck to arrive'}
+                  </p>
+                )}
+              </div>
+            )
+          })()}
       </div>
 
       <div className="border-t border-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
