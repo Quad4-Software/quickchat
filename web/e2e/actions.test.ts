@@ -176,6 +176,12 @@ test('presenting a pdf opens the briefing on both sides', async ({
   const alice = await ctx1.newPage()
   const bob = await ctx2.newPage()
 
+  // a refused frame means csp broke the briefing viewer again
+  const cspErrors: string[] = []
+  bob.on('console', (m) => {
+    if (m.text().includes('Content Security Policy')) cspErrors.push(m.text())
+  })
+
   const roomUrl = await createRoom(alice)
   await join(alice, roomUrl, 'alice')
   await join(bob, roomUrl, 'bob')
@@ -202,6 +208,15 @@ test('presenting a pdf opens the briefing on both sides', async ({
   await expect(
     bob.getByRole('dialog', { name: 'briefing' }).getByText('alice is presenting'),
   ).toBeVisible()
+
+  // the iframe must actually render content, not get csp-blocked
+  const frame = bob
+    .getByRole('dialog', { name: 'briefing' })
+    .locator('iframe')
+  await expect(frame).toBeVisible()
+  const doc = await frame.contentFrame()
+  expect(doc).not.toBeNull()
+  expect(cspErrors).toEqual([])
 
   await alice.getByRole('button', { name: 'close briefing' }).click()
   await expect(bob.getByRole('dialog', { name: 'briefing' })).not.toBeVisible()

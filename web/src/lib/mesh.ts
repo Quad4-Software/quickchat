@@ -75,6 +75,9 @@ const CHUNK_BYTES = 16 << 10
 const HIGH_WATER = 1 << 20
 const LOW_WATER = 256 << 10
 const MAX_QUEUED_CHAT = 32
+// chat control frames arrive at human speeds: a real client sends a
+// handful per second at most, anything above is a hostile flood
+const MAX_WIRE_PER_SEC = 64
 
 interface OutTransfer {
   header: FileHeader
@@ -102,6 +105,9 @@ interface PeerConn {
   chatQueue: string[]
   out: Map<string, OutTransfer>
   in: Map<string, InTransfer>
+  // sliding second bucket throttles a hostile peer spamming control
+  // frames on the chat channel
+  wireWin: { n: number; t: number }
 }
 
 export interface MeshOptions {
@@ -321,6 +327,7 @@ export class Mesh implements ChatSession {
       chatQueue: [],
       out: new Map(),
       in: new Map(),
+      wireWin: { n: 0, t: 0 },
     }
     this.conns.set(peer.id, p)
     this.h.onPeerLink(peer, 'connecting')
@@ -453,6 +460,9 @@ export class Mesh implements ChatSession {
     }
     ch.onmessage = (e) => {
       if (typeof e.data !== 'string') return
+      const now = Date.now()
+      if (now - p.wireWin.t > 1000) p.wireWin = { n: 1, t: now }
+      else if (++p.wireWin.n > MAX_WIRE_PER_SEC) return
       let w: Wire
       try {
         w = JSON.parse(e.data) as Wire

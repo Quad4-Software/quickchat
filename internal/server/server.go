@@ -135,8 +135,10 @@ func sanitizeName(s string) string {
 	if s == "" {
 		return "anon"
 	}
-	if len(s) > 32 {
-		s = s[:32]
+	// rune-safe truncation so multibyte names never split mid sequence
+	r := []rune(s)
+	if len(r) > 32 {
+		s = string(r[:32])
 	}
 	return s
 }
@@ -212,14 +214,14 @@ func (s *Server) livekitToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func randSuffix() string {
-	var b [3]byte
+	var b [5]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "x"
 	}
 	const a = "abcdefghijklmnopqrstuvwxyz234567"
 	out := make([]byte, 5)
 	for i := range out {
-		out[i] = a[b[i%3]&31]
+		out[i] = a[b[i]&31]
 	}
 	return string(out)
 }

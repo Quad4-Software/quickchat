@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Quad4-Software/quickchat/internal/config"
 	"github.com/Quad4-Software/quickchat/internal/hub"
@@ -201,5 +202,56 @@ func TestAttachmentEndpointsGone(t *testing.T) {
 	// the point is no upload is stored. Assert it is not a 201 json meta.
 	if res.StatusCode == http.StatusCreated {
 		t.Fatal("attachment upload endpoint should not exist")
+	}
+}
+
+func TestSanitizeNameUTF8Boundary(t *testing.T) {
+	// a 33-rune name full of multibyte characters must not corrupt the
+	// tail rune when truncated
+	name := strings.Repeat("日", 40)
+	got := sanitizeName(name)
+	if len([]rune(got)) != 32 {
+		t.Fatalf("expected 32 runes, got %d", len([]rune(got)))
+	}
+	if !utf8.ValidString(got) {
+		t.Fatal("truncation produced invalid utf8")
+	}
+	if sanitizeName("") != "anon" || sanitizeName("  ") != "anon" {
+		t.Fatal("blank names should fall back to anon")
+	}
+	if got := sanitizeName("fine"); got != "fine" {
+		t.Fatalf("unexpected rewrite: %q", got)
+	}
+}
+
+func TestRandSuffixEntropy(t *testing.T) {
+	// the suffix is part of the livekit identity: it must vary across
+	// every character position, not reuse three bytes
+	seen := make(map[string]struct{})
+	for i := 0; i < 200; i++ {
+		s := randSuffix()
+		if len(s) != 5 {
+			t.Fatalf("expected 5 chars, got %q", s)
+		}
+		seen[s] = struct{}{}
+	}
+	if len(seen) < 190 {
+		t.Fatalf("suffix collisions: %d unique of 200", len(seen))
+	}
+}
+
+func TestFrameSrcAllowsBlobPDFs(t *testing.T) {
+	ts := newTestServer(t, testConfig())
+	res, err := http.Get(ts.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	csp := res.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-src 'self' blob:") {
+		t.Fatalf("briefing iframes need blob: frame-src: %s", csp)
+	}
+	if res.Header.Get("Permissions-Policy") == "" {
+		t.Fatal("missing permissions-policy header")
 	}
 }

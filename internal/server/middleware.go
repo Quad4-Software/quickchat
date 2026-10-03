@@ -36,6 +36,8 @@ func securityHeaders(livekitURL string) func(http.Handler) http.Handler {
 		"base-uri 'none'",
 		"form-action 'self'",
 		"frame-ancestors 'none'",
+		// blob pdfs render in an iframe for the briefing viewer
+		"frame-src 'self' blob:",
 	}, "; ")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +48,9 @@ func securityHeaders(livekitURL string) func(http.Handler) http.Handler {
 			h.Set("Referrer-Policy", "no-referrer")
 			h.Set("Cross-Origin-Opener-Policy", "same-origin")
 			h.Set("Cross-Origin-Resource-Policy", "same-origin")
+			h.Set("Permissions-Policy",
+				"camera=(self), microphone=(self), display-capture=(self), "+
+					"picture-in-picture=(self), geolocation=(), payment=(), usb=()")
 			next.ServeHTTP(w, r)
 		})
 	}
