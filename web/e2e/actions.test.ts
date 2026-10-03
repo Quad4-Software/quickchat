@@ -311,7 +311,12 @@ test('attachments menu offers file and voice', async ({ page }) => {
   await expect(menu).not.toBeVisible()
 })
 
-test('shortcuts modal lists and rebinds actions', async ({ page }) => {
+test('shortcuts modal lists and rebinds actions', async ({
+  page,
+  viewport,
+}) => {
+  // the shortcuts button is hidden on small screens, no keyboard there
+  test.skip((viewport?.width ?? 1024) < 640, 'shortcuts button is desktop only')
   const roomUrl = await createRoom(page)
   await join(page, roomUrl, 'alice')
   await page.getByRole('button', { name: 'keyboard shortcuts' }).click()
