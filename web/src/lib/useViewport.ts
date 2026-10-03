@@ -22,17 +22,34 @@ export function useVisualViewport(): ViewportBox | null {
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
+    // the keyboard animates resize over many frames; coalesce to one
+    // state update per frame and keep the same box object when values
+    // have not moved
+    let raf = 0
     const update = () => {
-      if (vv.height < window.innerHeight - KEYBOARD_SHRINK_PX) {
-        setBox({ height: vv.height, offsetTop: vv.offsetTop })
-      } else {
-        setBox(null)
-      }
+      window.cancelAnimationFrame(raf)
+      raf = window.requestAnimationFrame(() => {
+        setBox((prev) => {
+          const next =
+            vv.height < window.innerHeight - KEYBOARD_SHRINK_PX
+              ? { height: vv.height, offsetTop: vv.offsetTop }
+              : null
+          if (
+            prev === null ||
+            next === null ||
+            prev.height !== next.height ||
+            prev.offsetTop !== next.offsetTop
+          )
+            return next
+          return prev
+        })
+      })
     }
     vv.addEventListener('resize', update)
     vv.addEventListener('scroll', update)
     update()
     return () => {
+      window.cancelAnimationFrame(raf)
       vv.removeEventListener('resize', update)
       vv.removeEventListener('scroll', update)
     }

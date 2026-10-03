@@ -1,9 +1,12 @@
+import { memo } from 'react'
 import { FileIcon, Loader2, TriangleAlert } from 'lucide-react'
 import { fileSize, timestamp } from '../lib/format'
 import { cn } from '../lib/cn'
 import type { ChatMessage, FileRef } from '../lib/types'
 
-export default function MessageRow({ msg }: { msg: ChatMessage }) {
+// memoized so a typing tick or an unrelated message append does not
+// re-render every row in the log
+function MessageRow({ msg }: { msg: ChatMessage }) {
   if (msg.sys) {
     return (
       <p className="text-xs text-dim">
@@ -27,6 +30,8 @@ export default function MessageRow({ msg }: { msg: ChatMessage }) {
     </div>
   )
 }
+
+export default memo(MessageRow)
 
 function FileCard({ file }: { file: FileRef }) {
   if (file.failed) {

@@ -44,8 +44,15 @@ export default function RoomPage({ id }: { id: string }) {
   const [chatBadge, setChatBadge] = useState(0)
   const vp = useVisualViewport()
   const closeDebug = useCallback(() => setDebug(false), [])
+  const toggleDebug = useCallback(() => setDebug((d) => !d), [])
+  // chat activity only needs a state write while the stage has the
+  // screen and the badge is actually visible
+  const focusRef = useRef(focus)
+  useEffect(() => {
+    focusRef.current = focus
+  }, [focus])
   const onChatActivity = useCallback(() => {
-    setChatBadge((n) => n + 1)
+    if (focusRef.current === 'stage') setChatBadge((n) => n + 1)
   }, [])
   const focusChat = useCallback(() => {
     setFocus('chat')
@@ -311,7 +318,7 @@ export default function RoomPage({ id }: { id: string }) {
                   <Stage
                     grant={grant}
                     e2eeKey={e2eeKey}
-                    onDebug={() => setDebug(!debug)}
+                    onDebug={toggleDebug}
                     debugOpen={debug}
                     compact={!isMd && focus === 'chat'}
                   />

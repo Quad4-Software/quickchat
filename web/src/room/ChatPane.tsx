@@ -373,6 +373,38 @@ export default function ChatPane({
     }
   }, [])
 
+  // a reconnect that never lands can mean the room itself is gone, for
+  // example after a server restart wiped its store. Probe the room api
+  // once per outage so a dead room explains itself instead of retrying
+  // forever
+  const roomProbe = useRef(false)
+  useEffect(() => {
+    if (conn.status === 'online') {
+      roomProbe.current = false
+      return
+    }
+    if (conn.status === 'offline' || roomProbe.current) return
+    let live = true
+    const t = window.setTimeout(() => {
+      // the debounce window resets on each attempt change; mark probed
+      // only on a real answer so a dropped fetch re-arms it
+      fetch(`/api/rooms/${room}`)
+        .then((r) => {
+          if (!live) return
+          roomProbe.current = true
+          if (r.status === 404) {
+            meshRef.current?.close()
+            setError('room not found')
+          }
+        })
+        .catch(() => {})
+    }, 1500)
+    return () => {
+      live = false
+      window.clearTimeout(t)
+    }
+  }, [conn.status, room])
+
   // unread count in the tab title while the page is hidden
   useEffect(() => {
     const base = `${room} - ${SITE.name}`

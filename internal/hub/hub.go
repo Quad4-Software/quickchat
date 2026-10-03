@@ -7,8 +7,11 @@ package hub
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base32"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,10 +42,14 @@ type Hub struct {
 	mu    sync.Mutex
 	rooms map[string]map[*Client]struct{}
 	ids   uint64
+	// per boot prefix so peer ids never repeat across restarts; a
+	// recycled id would let a stale peer connection be reused for the
+	// wrong peer after everyone reconnects
+	instance string
 }
 
 func New() *Hub {
-	return &Hub{rooms: make(map[string]map[*Client]struct{})}
+	return &Hub{rooms: make(map[string]map[*Client]struct{}), instance: instanceID()}
 }
 
 // PeerCount reports connected clients in a room.
@@ -87,7 +94,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, roomID, name strin
 	}
 	h.ids++
 	c := &Client{
-		Peer: Peer{ID: peerID(h.ids), Name: name},
+		Peer: Peer{ID: h.instance + peerID(h.ids), Name: name},
 		conn: conn,
 		send: make(chan []byte, sendBuffer),
 		hub:  h,
@@ -111,6 +118,15 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, roomID, name strin
 	h.broadcast(roomID, c, envelope{"type": "peer_joined", "peer": c.Peer})
 	c.deliver(envelope{"type": "welcome", "self": c.Peer, "peers": peers})
 	c.readLoop()
+}
+
+func instanceID() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "s0"
+	}
+	return strings.ToLower(
+		base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]))
 }
 
 func peerID(n uint64) string {

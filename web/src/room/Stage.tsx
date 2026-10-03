@@ -25,7 +25,7 @@ import type {
   RemoteParticipant,
   RoomOptions,
 } from 'livekit-client'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   LayoutGrid,
@@ -61,7 +61,9 @@ type View = 'grid' | 'speaker'
 // gain path in livekit applies the value directly so >1 actually amplifies
 const MAX_BOOST = 2
 
-export default function Stage({
+// memoized at the room boundary: parent state churn like the chat badge
+// or the copy button should not re-render the whole media tree
+function Stage({
   grant,
   e2eeKey,
   onDebug,
@@ -132,6 +134,8 @@ export default function Stage({
     </LiveKitRoom>
   )
 }
+
+export default memo(Stage)
 
 function fmtKbps(
   bytes: number,
