@@ -832,6 +832,8 @@ function Tile({
   const tileRef = useRef<HTMLDivElement>(null)
   const [pip, setPip] = useState(false)
   const [volOpen, setVolOpen] = useState(false)
+  const [volPos, setVolPos] = useState<ReturnType<typeof anchor> | null>(null)
+  const volBtnRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const el = tileRef.current?.querySelector('video')
@@ -902,12 +904,19 @@ function Tile({
         )}
       >
         {onVolume && !isScreen && (
-          <div className="relative">
+          <div>
             <button
+              ref={volBtnRef}
               aria-label={`volume ${Math.round((volume ?? 1) * 100)} percent`}
               aria-expanded={volOpen}
               title="volume"
-              onClick={() => setVolOpen(!volOpen)}
+              onClick={() => {
+                // fixed positioning escapes the tile overflow clip, the
+                // shared anchor flips it below the button near the top edge
+                if (!volOpen && volBtnRef.current)
+                  setVolPos(anchor(volBtnRef.current, 90))
+                setVolOpen(!volOpen)
+              }}
               className="rounded-md bg-background/80 p-1.5 text-muted-foreground backdrop-blur-sm hover:text-foreground"
             >
               {(volume ?? 1) === 0 ? (
@@ -916,8 +925,11 @@ function Tile({
                 <Volume2 className="size-3.5" aria-hidden />
               )}
             </button>
-            {volOpen && (
-              <div className="absolute right-0 top-8 z-30 flex w-36 flex-col gap-1.5 rounded-md border border-border bg-card p-2 shadow-md">
+            {volOpen && volPos && (
+              <div
+                style={volPos}
+                className="fixed z-50 flex w-36 flex-col gap-1.5 rounded-md border border-border bg-card p-2 shadow-md"
+              >
                 <input
                   type="range"
                   min={0}
@@ -1051,7 +1063,10 @@ function Controls({
           <Video className="size-4" aria-hidden />
           <span className="sr-only">camera</span>
         </TrackToggle>
-        <TrackToggle source={Track.Source.ScreenShare} className={toggleClass}>
+        <TrackToggle
+          source={Track.Source.ScreenShare}
+          className={cn(toggleClass, 'max-sm:hidden')}
+        >
           <MonitorUp className="size-4" aria-hidden />
           <span className="sr-only">share screen</span>
         </TrackToggle>
@@ -1088,7 +1103,7 @@ function Controls({
             aria-label="connection stats"
             aria-pressed={debugOpen}
             title="connection stats"
-            className={toggleClass}
+            className={cn(toggleClass, 'max-sm:hidden')}
           >
             <Activity className="size-4" aria-hidden />
           </button>

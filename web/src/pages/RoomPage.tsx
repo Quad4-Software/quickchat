@@ -377,7 +377,7 @@ export default function RoomPage({ id }: { id: string }) {
             onClick={() => setBindsOpen(true)}
             aria-label="keyboard shortcuts"
             title="keyboard shortcuts"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-hover hover:text-foreground max-sm:hidden"
           >
             <Keyboard className="size-3.5" />
           </button>
