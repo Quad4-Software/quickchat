@@ -106,9 +106,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: build
-        run: |
-          go build ./cmd/desktop
-          if [ "$(uname)" = "Darwin" ]; then GOARCH=amd64 go build -o /dev/null ./cmd/desktop; fi
+        run: go build ./cmd/desktop
+      - name: build amd64
+        if: runner.os == 'macOS'
+        run: GOARCH=amd64 CC="clang -arch x86_64" go build -o /dev/null ./cmd/desktop
 
   e2e:
     name: e2e

@@ -64,8 +64,17 @@ builds:
       - -s -w
       - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
       - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
-    # clang on apple silicon passes -arch to the linker so both arches
-    # build on a single macos runner
+    # clang on apple silicon needs the target arch spelled out or the
+    # objc side compiles for the host arch and the link fails
+    compilers:
+      - goos: darwin
+        goarch: amd64
+        cc: clang -arch x86_64
+        cxx: clang++ -arch x86_64
+      - goos: darwin
+        goarch: arm64
+        cc: clang -arch arm64
+        cxx: clang++ -arch arm64
     skip: '{{ if ne .Env.DESKTOP_TARGET "darwin" }}true{{ end }}'
 
 archives:
