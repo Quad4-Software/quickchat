@@ -109,7 +109,7 @@ jobs:
         run: go build ./cmd/desktop
       - name: build amd64
         if: runner.os == 'macOS'
-        run: GOARCH=amd64 CC="clang -arch x86_64" go build -o /dev/null ./cmd/desktop
+        run: GOARCH=amd64 CGO_ENABLED=1 CC="clang -arch x86_64" go build -o /dev/null ./cmd/desktop
 
   e2e:
     name: e2e
