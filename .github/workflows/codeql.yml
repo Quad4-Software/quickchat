@@ -38,6 +38,9 @@ jobs:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
           build-mode: ${{ matrix.language == 'go' && 'autobuild' || 'none' }}
+      - name: webview headers for cmd/desktop
+        if: matrix.language == 'go'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Build Go
         if: matrix.language == 'go'
         run: go build ./...
