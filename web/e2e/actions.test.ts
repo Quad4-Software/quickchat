@@ -210,9 +210,7 @@ test('presenting a pdf opens the briefing on both sides', async ({
   ).toBeVisible()
 
   // the iframe must actually render content, not get csp-blocked
-  const frame = bob
-    .getByRole('dialog', { name: 'briefing' })
-    .locator('iframe')
+  const frame = bob.getByRole('dialog', { name: 'briefing' }).locator('iframe')
   await expect(frame).toBeVisible()
   const doc = await frame.contentFrame()
   expect(doc).not.toBeNull()
