@@ -27,6 +27,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: webview headers for cmd/desktop
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: gofmt
         run: test -z "$(gofmt -l .)"
       - name: vet
@@ -77,6 +79,35 @@ jobs:
           name: web-dist
           path: web/dist
           retention-days: 7
+
+  desktop:
+    name: desktop ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux }
+          - { os: windows-latest, name: windows }
+          - { os: macos-13, name: darwin amd64 }
+          - { os: macos-15, name: darwin arm64 }
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: webview headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: build
+        run: go build ./cmd/desktop
 
   e2e:
     name: e2e

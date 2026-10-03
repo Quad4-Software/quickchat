@@ -47,10 +47,22 @@ Software.
   Its before hooks run the web build so dist/ is embedded. The release
   workflow adds SLSA3 provenance via the generic generator, cosign
   sign-blob on checksums.txt, and actions/attest-build-provenance.
+- Desktop: .goreleaser-desktop.yaml ships cmd/desktop. Linux and darwin
+  link system webviews through cgo so each target builds on a native
+  runner and skip-gates the others via DESKTOP_TARGET. Windows is
+  cgo-free and covers amd64 and arm64 on one runner. The release job
+  merges the partial checksums.txt files so the in-app updater can
+  verify quickchat-desktop_* archives against the same signed file.
 
 ## Layout
 
     cmd/quickchat/       thin main
+    cmd/desktop/         wails v3 shell, runs the server in-process on
+                         loopback and loads it in a webview window.
+                         LIVEKIT_* env enables media, QUICKCHAT_ADDR
+                         exposes hosted rooms to the lan. The wails
+                         updater pulls quickchat-desktop_* assets from
+                         github releases on a timer.
     internal/config/     env-only configuration
     internal/store/      sqlite room metadata
     internal/rooms/      room id generation and TTL sweep
