@@ -25,6 +25,9 @@ export default function DocsPage() {
           theme: 'kepler',
           darkMode: true,
           hideClientButton: true,
+          // skip the remote fonts.scalar.com @font-face pack: the app
+          // self hosts the same families and the csp stays font-src self
+          withDefaultFonts: false,
           metaData: { title: `${SITE.name} api` },
         }}
       />
