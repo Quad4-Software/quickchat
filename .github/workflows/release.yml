@@ -230,6 +230,8 @@ jobs:
             --latest \
             dist/quickchat_*.tar.gz \
             dist/quickchat_*.zip \
+            dist/quickchat-desktop_*.tar.gz \
+            dist/quickchat-desktop_*.zip \
             dist/*.intoto.jsonl \
             dist/checksums.txt \
             dist/checksums.txt.sigstore.json
