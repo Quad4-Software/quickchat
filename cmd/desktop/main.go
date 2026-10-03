@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: 0BSD
 
-// Desktop shell for quickchat. The full chat server runs in-process on
-// a loopback port and a wails window loads it, so the app is a portable
-// room host with the same ui, signaling, and livekit wiring as the web
-// deployment. Set LIVEKIT_* to enable media and QUICKCHAT_ADDR to
-// expose the hosted rooms to the lan.
+// Desktop shell for quickchat. The window loads a quickchat server,
+// the quad4 instance by default, and the embedded server runs on
+// loopback so the app can also host rooms locally. The web frontend
+// reaches this process through window._wails.invoke raw messages:
+// qc:server:<url> persists the backend choice, qc:notify:<base64>
+// raises a native notification.
 package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +31,17 @@ import (
 	"github.com/Quad4-Software/quickchat/internal/version"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
+
+// defaultServer is the hosted quad4 instance the app connects to.
+// The livekit host lk.quad4.io is configured server side and never
+// reaches the client.
+const defaultServer = "https://qc.quad4.io"
+
+const serverFile = "server.txt"
 
 func main() {
 	cfg := config.Load()
@@ -62,6 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	localURL := "http://" + ln.Addr().String()
 	httpSrv := &http.Server{
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -73,12 +86,19 @@ func main() {
 		}
 	}()
 	if cfg.LiveKitURL == "" {
-		slog.Warn("LIVEKIT_URL not set, voice and video disabled")
+		slog.Warn("LIVEKIT_URL not set, voice and video disabled for local rooms")
 	}
+
+	ns := notifications.New()
 
 	app := application.New(application.Options{
 		Name:        "quickchat",
 		Description: "ephemeral p2p chat rooms",
+		Services:    []application.Service{application.NewService(ns)},
+		RawMessageHandler: func(window application.Window, message string, origin *application.OriginInfo) {
+			slog.Debug("bridge message", "origin", originURL(origin), "msg", message)
+			handleBridge(window, message, ns, cfg.DataDir, localURL)
+		},
 		OnShutdown: func() {
 			h.CloseAll()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -123,16 +143,121 @@ func main() {
 		}
 	}
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "quickchat",
 		Width:     1280,
 		Height:    800,
 		MinWidth:  380,
 		MinHeight: 540,
-		URL:       "http://" + ln.Addr().String(),
+		URL:       resolveServer(cfg.DataDir, localURL),
+		Permissions: map[application.PermissionType]application.Permission{
+			application.PermissionMicrophone:    application.PermissionAllow,
+			application.PermissionCamera:        application.PermissionAllow,
+			application.PermissionNotifications: application.PermissionAllow,
+		},
+	})
+
+	// tapping a notification focuses the room window
+	ns.OnNotificationResponse(func(notifications.NotificationResult) {
+		win.Focus()
 	})
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// resolveServer picks the backend the window loads: env override,
+// the persisted choice, or the hosted quad4 instance.
+func resolveServer(dataDir, localURL string) string {
+	if v := os.Getenv("QUICKCHAT_SERVER"); v != "" {
+		return normalizeServer(v, localURL)
+	}
+	if b, err := os.ReadFile(filepath.Join(dataDir, serverFile)); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "" {
+			return normalizeServer(s, localURL)
+		}
+	}
+	return defaultServer
+}
+
+// normalizeServer accepts a host, url or the local keyword and maps it
+// to the url the window should load.
+func normalizeServer(s, localURL string) string {
+	s = strings.TrimSpace(s)
+	if s == "local" || s == "localhost" {
+		return localURL
+	}
+	if !strings.Contains(s, "://") {
+		s = "https://" + s
+	}
+	if u, err := url.Parse(s); err == nil && u.Host != "" {
+		return strings.TrimRight(u.String(), "/")
+	}
+	return defaultServer
+}
+
+// originURL renders the origin attached to a raw message, useful for
+// confirming the invoke channel on remote servers
+func originURL(o *application.OriginInfo) string {
+	if o == nil {
+		return ""
+	}
+	return o.Origin
+}
+
+// handleBridge parses raw window._wails.invoke messages from the web
+// frontend. The channel is how the page persists its server choice and
+// raises os notifications on platforms lacking the Notification api.
+func handleBridge(
+	window application.Window,
+	message string,
+	ns *notifications.NotificationService,
+	dataDir, localURL string,
+) {
+	switch {
+	case strings.HasPrefix(message, "qc:server:"):
+		raw, err := url.PathUnescape(strings.TrimPrefix(message, "qc:server:"))
+		if err != nil {
+			return
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		// persist the origin or the local keyword as entered
+		stored := raw
+		if raw != "local" && raw != "localhost" {
+			stored = normalizeServer(raw, localURL)
+		}
+		if err := os.WriteFile(
+			filepath.Join(dataDir, serverFile), []byte(stored+"\n"), 0o600); err != nil {
+			slog.Warn("persist server", "err", err)
+		}
+		// the local keyword cannot navigate itself, the shell does it
+		if raw == "local" || raw == "localhost" {
+			window.SetURL(localURL)
+		}
+	case strings.HasPrefix(message, "qc:notify:"):
+		raw, err := base64.StdEncoding.DecodeString(
+			strings.TrimPrefix(message, "qc:notify:"))
+		if err != nil {
+			return
+		}
+		var payload struct {
+			Title string `json:"t"`
+			Body  string `json:"b"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil || payload.Title == "" {
+			return
+		}
+		if err := ns.SendNotification(notifications.NotificationOptions{
+			Title: payload.Title,
+			Body:  payload.Body,
+		}); err != nil {
+			slog.Warn("notification", "err", err)
+		}
+	case message == "qc:hello":
+		slog.Info("bridge channel up")
 	}
 }

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'wouter'
-import { ArrowRight, Plus } from 'lucide-react'
+import { ArrowRight, ChevronDown, Plus } from 'lucide-react'
 import Mark from '../components/Mark'
 import Starfield from '../components/Starfield'
 import { createRoom } from '../lib/api'
+import { chooseServer, isDesktop } from '../lib/desktop'
 import { generateKey } from '../lib/e2ee'
 import { SITE } from '../lib/site'
 
@@ -12,6 +13,8 @@ export default function HomePage() {
   const [join, setJoin] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [adv, setAdv] = useState(false)
+  const [server, setServer] = useState('')
 
   async function onCreate() {
     setBusy(true)
@@ -78,6 +81,62 @@ export default function HomePage() {
               </button>
             </form>
             {error && <p className="pt-2 text-sm text-destructive">{error}</p>}
+          </div>
+
+          <div className="border-t border-border px-4">
+            <button
+              type="button"
+              onClick={() => {
+                setServer((s) => s || location.origin)
+                setAdv(!adv)
+              }}
+              aria-expanded={adv}
+              className="flex w-full items-center justify-between py-3 text-xs text-muted-foreground hover:text-foreground"
+            >
+              advanced
+              <ChevronDown
+                className={`size-3.5 transition-transform duration-200 ${adv ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </button>
+            <div
+              className={`grid transition-[grid-template-rows] duration-200 ease-out ${adv ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const url = chooseServer(server)
+                    if (!url) setError('invalid server address')
+                    else if (url !== 'local') location.href = url
+                  }}
+                  className="flex gap-2 pb-3"
+                >
+                  <input
+                    value={server}
+                    onChange={(e) => setServer(e.target.value)}
+                    placeholder={location.origin}
+                    aria-label="server address"
+                    className="min-w-0 flex-1 rounded-md border border-border bg-recessed px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring/30"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
+                  >
+                    connect
+                  </button>
+                </form>
+                {isDesktop() && (
+                  <button
+                    type="button"
+                    onClick={() => chooseServer('local')}
+                    className="pb-4 text-left text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    host rooms locally on this device
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

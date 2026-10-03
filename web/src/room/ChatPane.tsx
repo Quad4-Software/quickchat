@@ -27,6 +27,7 @@ import { activityBegin, activityEnd } from '../lib/activity'
 import { reactMutate } from '../lib/reactions'
 import { clearProfile, saveAvatar, saveName } from '../lib/profile'
 import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
+import { notifyDesktop } from '../lib/desktop'
 import { anchor } from '../lib/popover'
 import { SITE } from '../lib/site'
 import { fileSize } from '../lib/format'
@@ -366,16 +367,15 @@ export default function ChatPane({
           if (ev.peer.id !== selfRef.current.id) onChatActivity?.()
           if (document.hidden) {
             bumpTitle()
-            if (
-              'Notification' in window &&
-              Notification.permission === 'granted' &&
-              ev.peer.id !== selfRef.current.id
-            ) {
-              const n = new Notification(`${ev.peer.name} - ${SITE.name}`, {
-                body: ev.body ?? ev.file?.name ?? '',
-                tag: ev.id,
-              })
-              n.onclick = () => window.focus()
+            if (ev.peer.id !== selfRef.current.id) {
+              const title = `${ev.peer.name} - ${SITE.name}`
+              const body = ev.body ?? ev.file?.name ?? ''
+              // the desktop shell covers platforms without the web api
+              notifyDesktop(title, body)
+              if ('Notification' in window && Notification.permission === 'granted') {
+                const n = new Notification(title, { body, tag: ev.id })
+                n.onclick = () => window.focus()
+              }
             }
           }
         },
