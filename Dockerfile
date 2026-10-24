@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # Web build: pnpm is pinned by the packageManager field via corepack.
-FROM docker.io/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS web
+FROM docker.io/library/node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS web
 ENV CI=true
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@12.5.1 --activate
+RUN corepack enable && corepack prepare pnpm@12.15.0 --activate
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./web/
 RUN pnpm -C web fetch
 COPY web/ ./web/
@@ -13,7 +13,7 @@ RUN pnpm -C web install --prefer-offline --frozen-lockfile \
   && rm -rf web/node_modules
 
 # Go build: pure Go (modernc sqlite), static binary, no cgo.
-FROM docker.io/library/golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
+FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
 ENV GOTOOLCHAIN=local GOFLAGS=-buildvcs=false CGO_ENABLED=0
 WORKDIR /src
 COPY go.mod go.sum ./

@@ -68,7 +68,7 @@ services:
     logging: *default-logging
 
   livekit:
-    image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    image: livekit/livekit-server:v1.13.10@sha256:89ca9ce0791e18d6e03bf6e2c49ceb27e1c754eae8bd50c989386c1a5963791a
     user: "65532:65532"
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
