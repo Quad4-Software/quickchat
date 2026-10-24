@@ -1,7 +1,10 @@
 # Coolify deployment for quickchat.
 #
-# Setup: create a resource with Build Pack "Docker Compose", Base
-# Directory "/", Docker Compose Location "/docker-compose.coolify.yml".
+# Setup: create an Application from the Git repository (GitHub App or
+# deploy key) with Build Pack "Docker Compose", Base Directory "/",
+# Docker Compose Location "/docker-compose.coolify.yml". Do not paste
+# this file into "Docker Compose Empty": that resource has no checkout,
+# so the Dockerfile build context would be an empty directory.
 # Set the service's Domains field to the public URL including the
 # internal port, for example https://chat.example.com:8080.
 #
