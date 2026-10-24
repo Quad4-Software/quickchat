@@ -6,8 +6,11 @@
 # internal port, for example https://chat.example.com:8080.
 #
 # Coolify injects its management and proxy labels itself, so none are
-# defined here. The ghcr.io package must be public or the server must
-# have a registry credential configured for it.
+# defined here. The quickchat image is built on the server from the
+# repository Dockerfile (context is the repo root, relative to this
+# file), so no registry is needed. The first build runs the web build
+# and the go build inside the container. Rolling updates do not apply
+# to compose resources, so expect a short restart on each deploy.
 #
 # Required environment variables in Coolify:
 #   LIVEKIT_URL (wss://<the livekit service domain below>),
@@ -29,7 +32,9 @@ x-logging: &default-logging
 
 services:
   quickchat:
-    image: ghcr.io/quad4-software/quickchat:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     user: "65532:65532"
     environment:
       - QUICKCHAT_ADDR=:8080
