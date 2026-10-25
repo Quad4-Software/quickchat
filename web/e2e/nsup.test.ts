@@ -22,7 +22,14 @@ function assetUrl(marker: string): string {
   throw new Error(`no dist asset contains ${marker}`)
 }
 
-test('deepfilternet worklet loads under the real csp and denoises', async ({ page }) => {
+test('deepfilternet worklet loads under the real csp and denoises', async ({
+  page,
+  browserName,
+}) => {
+  // headless firefox on ci has no audio device and no user gesture, the
+  // AudioContext stays suspended and the evaluate never resolves.
+  // The live-nsup spec already skips non-chromium for the same reason.
+  test.skip(browserName !== 'chromium', 'verified on chromium only')
   test.setTimeout(90_000)
   const cspViolations: string[] = []
   page.on('console', (m) => {
@@ -49,8 +56,18 @@ test('deepfilternet worklet loads under the real csp and denoises', async ({ pag
       }
     }
 
+    // bounded waits so a stalled context or worklet reports the stage
+    // instead of burning the whole test timeout inside evaluate
+    const bounded = <T>(p: Promise<T>, label: string) =>
+      Promise.race([
+        p,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`timeout at ${label}`)), 45_000),
+        ),
+      ])
+
     const actx = new AudioContext({ sampleRate: 48000 })
-    await actx.resume()
+    await bounded(actx.resume(), 'audioContext.resume')
 
     // synthetic input: looping broadband white noise, loud enough that
     // the denoiser has something to remove
@@ -76,11 +93,14 @@ test('deepfilternet worklet loads under the real csp and denoises', async ({ pag
     const proc = new DeepFilterNetProcessor()
     // init only resolves once the worklet posts ready, which requires
     // the module, wasm and model fetches to all pass the csp
-    await proc.init({
-      kind: 'audio',
-      track: rawTrack,
-      audioContext: actx,
-    })
+    await bounded(
+      proc.init({
+        kind: 'audio',
+        track: rawTrack,
+        audioContext: actx,
+      }),
+      'proc.init',
+    )
     if (!proc.processedTrack) throw new Error('no processed track')
 
     const outSrc = actx.createMediaStreamSource(new MediaStream([proc.processedTrack]))

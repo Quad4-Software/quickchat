@@ -96,6 +96,9 @@ jobs:
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH
+          # sarif mode unsets the severity filter so exit-code applies to
+          # every finding, including unknown severity advisories
+          limit-severities-for-sarif: "true"
           ignore-unfixed: true
           exit-code: "1"
       - name: Upload Grype SARIF
