@@ -25,7 +25,9 @@ func securityHeaders(livekitURL string) func(http.Handler) http.Handler {
 	}
 	csp := strings.Join([]string{
 		"default-src 'self'",
-		"script-src 'self'",
+		// wasm-unsafe-eval lets the deepfilternet worklet instantiate its
+		// model wasm without opening script-src to eval
+		"script-src 'self' 'wasm-unsafe-eval'",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob:",
 		"font-src 'self'",

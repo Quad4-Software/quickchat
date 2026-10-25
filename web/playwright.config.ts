@@ -6,6 +6,8 @@ const PORT = 18080
 const fakeMediaArgs = [
   '--use-fake-device-for-media-stream',
   '--use-fake-ui-for-media-stream',
+  // headless audio contexts stay suspended without a gesture flag
+  '--autoplay-policy=no-user-gesture-required',
 ]
 
 // firefox publishes synthetic streams and auto-accepts getUserMedia

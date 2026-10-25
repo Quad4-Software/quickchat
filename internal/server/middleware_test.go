@@ -33,6 +33,22 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestCSPAllowsWasmEval(t *testing.T) {
+	ts := newTestServer(t, testConfig())
+	res, err := http.Get(ts.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	csp := res.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "script-src 'self' 'wasm-unsafe-eval'") {
+		t.Fatalf("worklet wasm needs wasm-unsafe-eval in script-src: %s", csp)
+	}
+	if strings.Contains(csp, "'unsafe-eval'") {
+		t.Fatalf("script-src must not allow plain eval: %s", csp)
+	}
+}
+
 func TestCSPIncludesLiveKitHost(t *testing.T) {
 	cfg := testConfig()
 	cfg.LiveKitURL = "wss://lk.example.com"

@@ -82,6 +82,11 @@ Software.
     web/src/lib/StatsProvider.tsx  stats registry provider component
     web/src/lib/pwa.ts      service worker registration + update flow
     web/src/lib/e2ee.ts  url-fragment media keys + e2ee support check
+    web/src/lib/noisefilter.ts  qc-nsup pref, mic constraints and the
+                            enable/disable dance for ml noise suppression
+    web/src/lib/dfnproc.ts   DeepFilterNet3 livekit TrackProcessor; lazy
+                            loaded so the 22 mb wasm+model never enter the
+                            initial or Stage chunks
     web/src/lib/recovery.ts   stale-chunk detection + guarded one-shot reload
     web/src/components/     Mark, ErrorBoundary (page/panel), ErrorView
     web/e2e/             playwright + axe specs against the real binary,
@@ -143,6 +148,12 @@ datachannels. Both validate through lib/wire.ts.
   MessageRow.test.tsx). e2e raises QUICKCHAT_RATE_* limits and lowers
   QUICKCHAT_MAX_FILE via env so the suite exercises limits without
   throttling.
+- ML noise suppression (@workadventure/noise-suppression deepfilternet
+  entry) is opt-in via the qc-nsup pref. The CSP carries
+  'wasm-unsafe-eval' in script-src for the model wasm, and while the
+  toggle is on the mic must capture with noiseSuppression: false so the
+  browser denoiser never stacks with the model. Any load failure or
+  overload reverts to browser noise suppression.
 - The scalar docs chunk is split out as docs-*.js and excluded from the
   service worker precache since it needs the live spec anyway.
 - The demo build (VITE_DEMO=1) is the gh pages bundle for

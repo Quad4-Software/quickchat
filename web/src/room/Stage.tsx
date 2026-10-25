@@ -12,6 +12,7 @@ import {
 import type { TrackReferenceOrPlaceholder } from '@livekit/components-react'
 import {
   isE2EESupported,
+  LocalAudioTrack,
   MediaDeviceFailure,
   ParticipantEvent,
   RemoteAudioTrack,
@@ -20,6 +21,7 @@ import {
 } from 'livekit-client'
 import type {
   ConnectionState,
+  LocalTrackPublication,
   Participant,
   RemoteParticipant,
   Room,
@@ -56,6 +58,14 @@ import { useRegisterStats } from '../lib/stats'
 import { BINDS_CHANGED, isTextTarget, loadBinds, matchBind } from '../lib/keybinds'
 import { anchor } from '../lib/popover'
 import { roomOptions } from '../lib/roomopts'
+import {
+  disableNoiseSuppression,
+  enableNoiseSuppression,
+  localMicTrack,
+  nsupPreferred,
+  nsupSupported,
+  setNsupPreferred,
+} from '../lib/noisefilter'
 import type { StatRow, StatSection } from '../lib/stats'
 import type { LiveKitGrant, Peer } from '../lib/types'
 import Avatar from '../components/Avatar'
@@ -189,6 +199,8 @@ function StageInner({
   const [ptt, setPtt] = useState(() => localStorage.getItem('qc-ptt') === '1')
   const [talking, setTalking] = useState(false)
   const [saver, setSaver] = useState(() => localStorage.getItem('qc-saver') === '1')
+  const [nsup, setNsup] = useState(nsupPreferred)
+  const [nsupPending, setNsupPending] = useState(false)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [chosen, setChosen] = useState<Record<string, string>>(() => {
     try {
@@ -430,6 +442,83 @@ function StageInner({
     setSaver(next)
     localStorage.setItem('qc-saver', next ? '1' : '0')
   }
+
+  // ai noise suppression must never leave the mic in a half configured
+  // state: any failure or overload falls back to the browser denoiser
+  // and clears the preference so the next publish starts clean
+  const revertNsup = useCallback(
+    (why: string) => {
+      setNsup(false)
+      setNsupPending(false)
+      setNsupPreferred(false)
+      setMediaError(why)
+      const track = localMicTrack(room)
+      if (track) void disableNoiseSuppression(track).catch(() => {})
+    },
+    [room],
+  )
+  const revertNsupRef = useRef(revertNsup)
+  useEffect(() => {
+    revertNsupRef.current = revertNsup
+  }, [revertNsup])
+
+  const attachNsup = useCallback(async () => {
+    const track = localMicTrack(room)
+    if (!track) {
+      // the mic is not published yet; audioCaptureDefaults plus the
+      // LocalTrackPublished hook apply it when it appears
+      setNsup(true)
+      setNsupPreferred(true)
+      return
+    }
+    setNsupPending(true)
+    try {
+      await enableNoiseSuppression(track, {
+        onOverload: () =>
+          revertNsupRef.current(
+            'ai noise suppression could not keep up; browser noise suppression restored',
+          ),
+      })
+      setNsup(true)
+      setNsupPending(false)
+      setNsupPreferred(true)
+    } catch (err) {
+      revertNsupRef.current(
+        `ai noise suppression failed: ${err instanceof Error ? err.message : 'unavailable'}`,
+      )
+    }
+  }, [room])
+
+  const toggleNsup = () => {
+    if (nsup || nsupPending) {
+      setNsup(false)
+      setNsupPending(false)
+      setNsupPreferred(false)
+      const track = localMicTrack(room)
+      if (track) void disableNoiseSuppression(track).catch(() => {})
+      return
+    }
+    if (!nsupSupported()) {
+      setMediaError('ai noise suppression needs audioworklet and webassembly')
+      return
+    }
+    void attachNsup()
+  }
+
+  // processors do not survive an unpublish, so the preference is
+  // reapplied every time the mic track (re)appears
+  useEffect(() => {
+    const onPub = (pub: LocalTrackPublication) => {
+      if (pub.source !== Track.Source.Microphone || !nsupPreferred()) return
+      const track = pub.track
+      if (!(track instanceof LocalAudioTrack) || track.getProcessor()) return
+      void attachNsup()
+    }
+    room.on(RoomEvent.LocalTrackPublished, onPub)
+    return () => {
+      room.off(RoomEvent.LocalTrackPublished, onPub)
+    }
+  }, [room, attachNsup])
 
   // soundboard pads publish a temp audio track and report the label
   // back to chat so the play shows up in the log
@@ -785,6 +874,9 @@ function StageInner({
         onPtt={togglePtt}
         saver={saver}
         onSaver={toggleSaver}
+        nsup={nsup}
+        nsupPending={nsupPending}
+        onNsup={toggleNsup}
         devices={devices}
         chosen={chosen}
         onDevice={onDevice}
@@ -1006,6 +1098,9 @@ function Controls({
   onPtt,
   saver,
   onSaver,
+  nsup,
+  nsupPending,
+  onNsup,
   devices,
   chosen,
   onDevice,
@@ -1026,6 +1121,9 @@ function Controls({
   onPtt?: (() => void) | undefined
   saver?: boolean | undefined
   onSaver?: (() => void) | undefined
+  nsup?: boolean | undefined
+  nsupPending?: boolean | undefined
+  onNsup?: (() => void) | undefined
   devices?: MediaDeviceInfo[] | undefined
   chosen?: Record<string, string> | undefined
   onDevice?: ((kind: MediaDeviceKind, id: string) => void) | undefined
@@ -1118,6 +1216,9 @@ function Controls({
             onPtt={onPtt}
             saver={saver}
             onSaver={onSaver}
+            nsup={nsup}
+            nsupPending={nsupPending}
+            onNsup={onNsup}
           />
         )}
         <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
@@ -1152,6 +1253,9 @@ function SettingsMenu({
   onPtt,
   saver,
   onSaver,
+  nsup,
+  nsupPending,
+  onNsup,
 }: {
   devices: MediaDeviceInfo[]
   chosen: Record<string, string>
@@ -1160,6 +1264,9 @@ function SettingsMenu({
   onPtt?: (() => void) | undefined
   saver?: boolean | undefined
   onSaver?: (() => void) | undefined
+  nsup?: boolean | undefined
+  nsupPending?: boolean | undefined
+  onNsup?: (() => void) | undefined
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<ReturnType<typeof anchor> | null>(null)
@@ -1251,6 +1358,17 @@ function SettingsMenu({
                 className="accent-foreground"
               />
               data saver (lower bitrates)
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+              <input
+                type="checkbox"
+                aria-label="noise suppression ai"
+                checked={Boolean(nsup)}
+                disabled={Boolean(nsupPending)}
+                onChange={() => onNsup?.()}
+                className="accent-foreground"
+              />
+              noise suppression (ai){nsupPending ? ' (loading)' : ''}
             </label>
           </div>
         </div>

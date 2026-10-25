@@ -4,6 +4,7 @@
 
 import { ExternalE2EEKeyProvider, isE2EESupported } from 'livekit-client'
 import type { RoomOptions } from 'livekit-client'
+import { micCaptureConstraints, nsupPreferred } from './noisefilter'
 
 // e2eeUsable reports whether media encryption can actually run, since
 // browsers without insertable streams silently fall back to dtls-srtp
@@ -17,6 +18,11 @@ export function e2eeUsable(e2eeKey?: string | null): boolean {
 // construction time.
 export function roomOptions(e2eeKey?: string | null): RoomOptions {
   const opts: RoomOptions = { webAudioMix: true }
+  // with ml noise suppression the mic must be captured without the
+  // browser denoiser so the two never stack
+  if (nsupPreferred()) {
+    opts.audioCaptureDefaults = micCaptureConstraints(true)
+  }
   const e2eeUsable = Boolean(e2eeKey) && isE2EESupported()
   if (e2eeUsable && e2eeKey) {
     const keyProvider = new ExternalE2EEKeyProvider()

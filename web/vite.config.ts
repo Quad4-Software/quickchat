@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { noiseSuppressionAudioWorkletVitePlugin } from '@workadventure/noise-suppression/vite'
 
 // VITE_DEMO=1 builds the static client-only bundle for gh pages: hash
 // routing, demo room as the index, no service worker. VITE_BASE sets the
@@ -41,6 +42,9 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // dev only plugin: serves the deepfilternet worklet, wasm and model
+    // since dev cannot resolve the package's import.meta.url assets
+    noiseSuppressionAudioWorkletVitePlugin(),
     ...(DEMO
       ? [pwaStub, demoSpec]
       : [

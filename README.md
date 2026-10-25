@@ -10,7 +10,8 @@ room ids and timestamps only.
 
 A scripted client-only demo runs at `/demo` (no server needed) and is
 published to https://quickchat.quad4.io via GitHub Pages on every web
-change.
+change. An opt-in DeepFilterNet3 noise suppression toggle for the
+microphone runs fully client side from the media settings menu.
 
 ## Run
 
