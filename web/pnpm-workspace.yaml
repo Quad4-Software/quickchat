@@ -11,6 +11,8 @@ allowBuilds:
   esbuild: true
   # vue-demi postinstall only selects the vue 2 or 3 shim for scalar
   vue-demi: true
+  # protobufjs postinstall only checks the version scheme, never needed
+  protobufjs: false
 
 # Block unexpected injected transitive dependencies.
 blockExoticSubdeps: true
