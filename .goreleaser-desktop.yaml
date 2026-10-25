@@ -22,6 +22,8 @@ builds:
       - linux
     goarch:
       - amd64
+    tags:
+      - production
     flags:
       - -trimpath
     ldflags:
@@ -40,10 +42,12 @@ builds:
     goarch:
       - amd64
       - arm64
+    tags:
+      - production
     flags:
       - -trimpath
     ldflags:
-      - -s -w
+      - -s -w -H windowsgui
       - -X github.com/Quad4-Software/quickchat/internal/version.Version={{ .Version }}
       - -X github.com/Quad4-Software/quickchat/internal/version.Commit={{ .Commit }}
     skip: '{{ if ne .Env.DESKTOP_TARGET "windows" }}true{{ end }}'
@@ -61,6 +65,8 @@ builds:
       - darwin
     goarch:
       - amd64
+    tags:
+      - production
     flags:
       - -trimpath
     ldflags:
@@ -78,6 +84,8 @@ builds:
       - darwin
     goarch:
       - arm64
+    tags:
+      - production
     flags:
       - -trimpath
     ldflags:
@@ -87,7 +95,24 @@ builds:
     skip: '{{ if ne .Env.DESKTOP_TARGET "darwin" }}true{{ end }}'
 
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: linux
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    ids:
+      - desktop-linux-amd64
+    formats:
+      - tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - src: cmd/desktop/linux/quickchat.desktop
+      - src: cmd/desktop/icon.png
+        dst: quickchat.png
+  - id: desktop
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    ids:
+      - desktop-windows
+      - desktop-darwin-amd64
+      - desktop-darwin-arm64
     formats:
       - tar.gz
     format_overrides:

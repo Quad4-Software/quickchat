@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0.0"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "0.1.0.0",
+			"CompanyName": "Quad4 Software",
+			"FileDescription": "quickchat desktop",
+			"LegalCopyright": "Copyright Quad4 Software, 0BSD",
+			"ProductName": "quickchat",
+			"Comments": "ephemeral p2p chat rooms"
+		}
+	}
+}

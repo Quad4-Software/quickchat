@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -42,6 +43,9 @@ import (
 const defaultServer = "https://qc.quad4.io"
 
 const serverFile = "server.txt"
+
+//go:embed icon.png
+var iconPNG []byte
 
 func main() {
 	cfg := config.Load()
@@ -94,7 +98,11 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "quickchat",
 		Description: "ephemeral p2p chat rooms",
+		Icon:        iconPNG,
 		Services:    []application.Service{application.NewService(ns)},
+		// prgname ties the window to the shipped quickchat.desktop file
+		// so launchers can group it and resolve the icon
+		Linux: application.LinuxOptions{ProgramName: "quickchat"},
 		RawMessageHandler: func(window application.Window, message string, origin *application.OriginInfo) {
 			slog.Debug("bridge message", "origin", originURL(origin), "msg", message)
 			handleBridge(window, message, ns, cfg.DataDir, localURL)

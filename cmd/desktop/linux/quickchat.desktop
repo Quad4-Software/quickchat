@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=quickchat
+Comment=Ephemeral p2p chat rooms
+Exec=quickchat
+Icon=quickchat
+Categories=Network;Chat;
+Terminal=false
+StartupNotify=true
