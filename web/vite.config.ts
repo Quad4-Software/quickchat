@@ -85,6 +85,7 @@ export default defineConfig({
               navigateFallbackDenylist: [
                 /^\/api\//,
                 /^\/ws\//,
+                /^\/rtc/,
                 /^\/healthz/,
                 /^\/readyz/,
               ],
@@ -123,6 +124,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/ws': { target: 'ws://localhost:8080', ws: true },
+      '/rtc': { target: 'http://localhost:8080', ws: true },
     },
   },
 })

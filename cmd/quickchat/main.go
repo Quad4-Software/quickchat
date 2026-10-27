@@ -86,8 +86,8 @@ func main() {
 	go func() {
 		slog.Info("listening", "version", version.Version,
 			"commit", version.Commit, "addr", cfg.Addr)
-		if cfg.LiveKitURL == "" {
-			slog.Warn("LIVEKIT_URL not set, voice and video disabled")
+		if cfg.LiveKitURL == "" && cfg.LiveKitInternal == "" {
+			slog.Warn("no livekit endpoint set, voice and video disabled")
 		}
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)

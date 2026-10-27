@@ -9,42 +9,53 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/Quad4-Software/quickchat/internal/config"
 )
 
 // securityHeaders sets privacy and hardening headers on every response.
 // The CSP connect-src includes the configured LiveKit host so clients can
 // reach signaling without opening ws/wss to arbitrary origins.
-func securityHeaders(livekitURL string) func(http.Handler) http.Handler {
+func securityHeaders(cfg config.Config) func(http.Handler) http.Handler {
 	connect := "'self'"
-	if u, err := url.Parse(livekitURL); err == nil && u.Host != "" {
+	if u, err := url.Parse(cfg.LiveKitURL); err == nil && u.Host != "" {
 		scheme := "wss://"
 		if u.Scheme == "ws" || u.Scheme == "http" {
 			scheme = "ws://"
 		}
 		connect += " " + scheme + u.Host
 	}
-	csp := strings.Join([]string{
-		"default-src 'self'",
-		// wasm-unsafe-eval lets the deepfilternet worklet instantiate its
-		// model wasm without opening script-src to eval
-		"script-src 'self' 'wasm-unsafe-eval'",
-		"style-src 'self' 'unsafe-inline'",
-		"img-src 'self' data: blob:",
-		"font-src 'self'",
-		"connect-src " + connect,
-		"media-src 'self' blob: mediastream:",
-		"worker-src 'self' blob:",
-		"object-src 'none'",
-		"base-uri 'none'",
-		"form-action 'self'",
-		"frame-ancestors 'none'",
-		// blob pdfs render in an iframe for the briefing viewer
-		"frame-src 'self' blob:",
-	}, "; ")
+	csp := func(connect string) string {
+		return strings.Join([]string{
+			"default-src 'self'",
+			// wasm-unsafe-eval lets the deepfilternet worklet instantiate its
+			// model wasm without opening script-src to eval
+			"script-src 'self' 'wasm-unsafe-eval'",
+			"style-src 'self' 'unsafe-inline'",
+			"img-src 'self' data: blob:",
+			"font-src 'self'",
+			"connect-src " + connect,
+			"media-src 'self' blob: mediastream:",
+			"worker-src 'self' blob:",
+			"object-src 'none'",
+			"base-uri 'none'",
+			"form-action 'self'",
+			"frame-ancestors 'none'",
+			// blob pdfs render in an iframe for the briefing viewer
+			"frame-src 'self' blob:",
+		}, "; ")
+	}
+	static := csp(connect)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
-			h.Set("Content-Security-Policy", csp)
+			policy := static
+			if cfg.LiveKitInternal != "" {
+				// signaling rides this origin through the /rtc proxy;
+				// webkit does not cover ws schemes under self
+				policy = csp(connect + " ws://" + r.Host + " wss://" + r.Host)
+			}
+			h.Set("Content-Security-Policy", policy)
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Referrer-Policy", "no-referrer")
@@ -91,6 +102,7 @@ func gzipped(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		accept := r.Header.Get("Accept-Encoding")
 		if strings.HasPrefix(r.URL.Path, "/ws/") ||
+			strings.HasPrefix(r.URL.Path, "/rtc") ||
 			!strings.Contains(accept, "gzip") ||
 			r.Header.Get("Range") != "" {
 			next.ServeHTTP(w, r)

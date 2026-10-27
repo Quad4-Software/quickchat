@@ -38,9 +38,12 @@ Software.
 - Dockerfile: 3-stage (node pnpm web build, go build, distroless nonroot
   uid 65532). All base images pinned by digest. Healthcheck is the
   `quickchat healthcheck` subcommand, no shell needed.
-- docker-compose.yml: app + traefik, read-only, cap_drop ALL, tmpfs /tmp.
+- docker-compose.yml: app + bundled livekit + traefik, read-only,
+  cap_drop ALL, tmpfs /tmp. LiveKit signaling is proxied by the app at
+  /rtc so only one domain is needed; media still wants 7881/tcp and
+  7882/udp open.
 - docker-compose.coolify.yml: single service, Coolify injects proxy
-  labels. Set Domains to https://host:8080.
+  labels. Set Domains to https://host:8080 on the app service only.
 - Publishing lives in .github/workflows/docker.yml: ghcr push, zstd
   compression, cosign keyless sign, SBOM and OpenVEX attestations.
 - Releases: .goreleaser.yaml builds the six platform archives on v* tags.
@@ -68,7 +71,11 @@ Software.
     internal/rooms/      room id generation and TTL sweep
     internal/hub/        websocket presence + webrtc signaling relay
     internal/lktoken/    livekit access token minting
-    internal/server/     chi routes, embedded SPA, openapi.yaml
+    internal/server/     chi routes, embedded SPA, openapi.yaml, /rtc
+                         reverse proxy to a bundled livekit
+                         (LIVEKIT_INTERNAL_URL); in that mode the token
+                         endpoint advertises this server's own origin
+                         and the csp allows same-origin ws/wss
     web/                 React app, embed.go exports web.Dist (embeds dist/)
     web/src/pages/       HomePage, RoomPage, DemoPage, DocsPage (scalar, lazy)
     web/src/room/        Stage (livekit av), DemoStage, ChatPane, MessageRow,

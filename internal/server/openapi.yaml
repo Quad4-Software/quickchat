@@ -89,8 +89,11 @@ paths:
       summary: Mint a LiveKit token
       description: |
         Returns a short-lived LiveKit access token for the room. Only
-        available when the server operator configured LIVEKIT_URL,
-        LIVEKIT_API_KEY and LIVEKIT_API_SECRET.
+        available when the server operator configured LIVEKIT_API_KEY
+        and LIVEKIT_API_SECRET plus a LiveKit endpoint, either
+        LIVEKIT_URL or LIVEKIT_INTERNAL_URL. With the internal mode the
+        returned url is this server's own origin since it proxies
+        signaling at /rtc.
       operationId: livekitToken
       parameters:
         - $ref: "#/components/parameters/roomId"

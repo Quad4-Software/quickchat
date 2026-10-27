@@ -16,14 +16,13 @@
 # to compose resources, so expect a short restart on each deploy.
 #
 # Required environment variables in Coolify:
-#   LIVEKIT_URL (wss://<the livekit service domain below>),
 #   LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 # Optional: QUICKCHAT_ROOM_TTL, QUICKCHAT_MAX_FILE,
 #   QUICKCHAT_ICE_SERVERS (comma separated stun or turn urls),
 #   LIVEKIT_NODE_IP (pin the advertised media ip), TZ
 #
-# LiveKit is bundled. Give the livekit service its own domain in the
-# Coolify UI (port 7880), then set LIVEKIT_URL to it. Open 7881/tcp and
+# LiveKit is bundled and needs no domain of its own: the app proxies
+# its signaling under /rtc on the quickchat domain. Open 7881/tcp and
 # 7882/udp on the host firewall for WebRTC media.
 name: quickchat
 
@@ -46,7 +45,7 @@ services:
       - QUICKCHAT_MAX_FILE=${QUICKCHAT_MAX_FILE:-67108864}
       - QUICKCHAT_ICE_SERVERS=${QUICKCHAT_ICE_SERVERS:-}
       - QUICKCHAT_TRUSTED_PROXY=true
-      - LIVEKIT_URL=${LIVEKIT_URL:?}
+      - LIVEKIT_INTERNAL_URL=http://livekit:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?}
       - SERVICE_FQDN_QUICKCHAT_8080
@@ -88,7 +87,6 @@ services:
           tcp_port: 7881
           udp_port: 7882
           use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
-      SERVICE_FQDN_LIVEKIT_7880:
       TZ: ${TZ:-UTC}
       HOME: /tmp
     ports:

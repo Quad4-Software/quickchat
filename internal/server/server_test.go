@@ -173,6 +173,72 @@ func TestTokenWithLiveKit(t *testing.T) {
 	}
 }
 
+func TestTokenInternalLiveKit(t *testing.T) {
+	var gotPath string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(upstream.Close)
+	cfg := config.Config{
+		LiveKitInternal: upstream.URL,
+		LiveKitAPIKey:   "key",
+		LiveKitSecret:   "secretsecretsecretsecretsecret",
+	}
+	ts := newTestServer(t, cfg)
+	host := strings.TrimPrefix(ts.URL, "http://")
+	id := createRoom(t, ts)
+
+	res, err := http.Get(ts.URL + "/api/rooms/" + id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		Livekit bool `json:"livekit"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if !info.Livekit {
+		t.Fatal("internal livekit should enable the room livekit flag")
+	}
+
+	req, err := http.NewRequest(http.MethodGet,
+		ts.URL+"/api/rooms/"+id+"/token?name=bob", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Forwarded-Proto", "https")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var v struct {
+		URL   string `json:"url"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		t.Fatal(err)
+	}
+	// internal mode advertises this origin, never the upstream host
+	if v.URL != "wss://"+host || v.Token == "" {
+		t.Fatalf("bad grant: %+v", v)
+	}
+
+	// /rtc must reach the upstream with its path intact
+	res2, err := http.Get(ts.URL + "/rtc/validate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res2.Body.Close()
+	if res2.StatusCode != http.StatusNoContent || gotPath != "/rtc/validate" {
+		t.Fatalf("rtc proxy failed: status %d upstream path %q",
+			res2.StatusCode, gotPath)
+	}
+}
+
 func TestOpenAPISpec(t *testing.T) {
 	ts := newTestServer(t, testConfig())
 	res, err := http.Get(ts.URL + "/api/openapi.yaml")

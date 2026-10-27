@@ -9,14 +9,19 @@ import (
 )
 
 type Config struct {
-	Addr          string
-	DataDir       string
-	LiveKitURL    string
-	LiveKitAPIKey string
-	LiveKitSecret string
-	PprofAddr     string
-	RoomTTL       time.Duration
-	TrustedProxy  bool
+	Addr       string
+	DataDir    string
+	LiveKitURL string
+	// LiveKitInternal points at a livekit server reachable only by this
+	// process. When set the server proxies its signaling at /rtc and
+	// advertises its own origin to clients, so no second public domain
+	// is needed. LIVEKIT_URL is then unused.
+	LiveKitInternal string
+	LiveKitAPIKey   string
+	LiveKitSecret   string
+	PprofAddr       string
+	RoomTTL         time.Duration
+	TrustedProxy    bool
 
 	// ICEServers are advertised to clients for the p2p mesh. The
 	// default carries public stun since host candidates alone cannot
@@ -35,14 +40,15 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Addr:          env("QUICKCHAT_ADDR", ":8080"),
-		DataDir:       env("QUICKCHAT_DATA", "./data"),
-		LiveKitURL:    os.Getenv("LIVEKIT_URL"),
-		LiveKitAPIKey: os.Getenv("LIVEKIT_API_KEY"),
-		LiveKitSecret: os.Getenv("LIVEKIT_API_SECRET"),
-		PprofAddr:     os.Getenv("QUICKCHAT_PPROF"),
-		RoomTTL:       durEnv("QUICKCHAT_ROOM_TTL", 7*24*time.Hour),
-		TrustedProxy:  boolEnv("QUICKCHAT_TRUSTED_PROXY"),
+		Addr:            env("QUICKCHAT_ADDR", ":8080"),
+		DataDir:         env("QUICKCHAT_DATA", "./data"),
+		LiveKitURL:      os.Getenv("LIVEKIT_URL"),
+		LiveKitInternal: os.Getenv("LIVEKIT_INTERNAL_URL"),
+		LiveKitAPIKey:   os.Getenv("LIVEKIT_API_KEY"),
+		LiveKitSecret:   os.Getenv("LIVEKIT_API_SECRET"),
+		PprofAddr:       os.Getenv("QUICKCHAT_PPROF"),
+		RoomTTL:         durEnv("QUICKCHAT_ROOM_TTL", 7*24*time.Hour),
+		TrustedProxy:    boolEnv("QUICKCHAT_TRUSTED_PROXY"),
 
 		ICEServers: defaultStrings(
 			listEnv("QUICKCHAT_ICE_SERVERS"),

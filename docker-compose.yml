@@ -25,7 +25,7 @@ services:
       - QUICKCHAT_ICE_SERVERS=${QUICKCHAT_ICE_SERVERS:-}
       - QUICKCHAT_PPROF=${QUICKCHAT_PPROF:-}
       - QUICKCHAT_TRUSTED_PROXY=true
-      - LIVEKIT_URL=wss://lk.${QUICKCHAT_DOMAIN:?}
+      - LIVEKIT_INTERNAL_URL=http://livekit:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?}
       - TZ=${TZ:-UTC}
@@ -62,9 +62,9 @@ services:
           memory: 256M
     logging: *default-logging
 
-  # bundled livekit server so the stack is all in one. signaling is
-  # proxied at lk.<domain> by traefik; media rides dedicated ports.
-  # on a vps, open 7881/tcp and 7882/udp in the firewall.
+  # bundled livekit server so the stack is all in one. the app proxies
+  # its signaling under /rtc on the main domain; media rides dedicated
+  # ports. on a vps, open 7881/tcp and 7882/udp in the firewall.
   livekit:
     image: livekit/livekit-server:v1.13.10@sha256:89ca9ce0791e18d6e03bf6e2c49ceb27e1c754eae8bd50c989386c1a5963791a
     restart: unless-stopped
@@ -96,13 +96,6 @@ services:
       - "7880"
     networks:
       - web
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=quickchat-web
-      - traefik.http.routers.livekit.rule=Host(`lk.${QUICKCHAT_DOMAIN:?}`)
-      - traefik.http.routers.livekit.entrypoints=websecure
-      - traefik.http.routers.livekit.tls.certresolver=le
-      - traefik.http.services.livekit.loadbalancer.server.port=7880
     deploy:
       resources:
         limits:

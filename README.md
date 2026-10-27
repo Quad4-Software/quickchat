@@ -28,8 +28,9 @@ From source:
 Open http://localhost:8080. API docs are at /docs. Without the LIVEKIT_*
 variables the app runs as chat only.
 
-For Coolify use `docker-compose.coolify.yml` and assign domains to both
-services.
+For Coolify use `docker-compose.coolify.yml` and assign a domain to the
+app service only; LiveKit signaling shares it through the built-in
+proxy.
 
 ## Desktop
 
@@ -52,6 +53,9 @@ Environment variables, defaults shown:
     QUICKCHAT_PPROF=                pprof listen address, off when empty
     QUICKCHAT_TRUSTED_PROXY=        trust X-Forwarded-For
     LIVEKIT_URL=                    wss:// endpoint for the client
+    LIVEKIT_INTERNAL_URL=           proxy livekit signaling at /rtc to
+                                    this upstream instead, and advertise
+                                    this server's own origin to clients
     LIVEKIT_API_KEY=
     LIVEKIT_API_SECRET=
 

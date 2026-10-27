@@ -38,8 +38,8 @@ import (
 )
 
 // defaultServer is the hosted quad4 instance the app connects to.
-// The livekit host lk.quad4.io is configured server side and never
-// reaches the client.
+// LiveKit signaling rides this same origin through the server's /rtc
+// proxy, so the client only ever dials this one host.
 const defaultServer = "https://qc.quad4.io"
 
 const serverFile = "server.txt"
@@ -89,8 +89,8 @@ func main() {
 			slog.Error("http server", "err", err)
 		}
 	}()
-	if cfg.LiveKitURL == "" {
-		slog.Warn("LIVEKIT_URL not set, voice and video disabled for local rooms")
+	if cfg.LiveKitURL == "" && cfg.LiveKitInternal == "" {
+		slog.Warn("no livekit endpoint set, voice and video disabled for local rooms")
 	}
 
 	ns := notifications.New()

@@ -6,9 +6,13 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -32,13 +36,14 @@ type Server struct {
 	rooms  *rooms.Manager
 	hub    *hub.Hub
 	ping   func(ctx context.Context) error
+	lk     http.Handler
 	create *ratelimit.Limiter
 	action *ratelimit.Limiter
 	socket *ratelimit.Limiter
 }
 
 func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, ping func(ctx context.Context) error) *Server {
-	return &Server{
+	s := &Server{
 		cfg:    cfg,
 		rooms:  rm,
 		hub:    h,
@@ -47,6 +52,36 @@ func New(cfg config.Config, rm *rooms.Manager, h *hub.Hub, ping func(ctx context
 		action: ratelimit.New(rate(cfg.RateActionPerMin, 60), burst(rate(cfg.RateActionPerMin, 60))),
 		socket: ratelimit.New(rate(cfg.RateSocketPerMin, 30), burst(rate(cfg.RateSocketPerMin, 30))),
 	}
+	if cfg.LiveKitInternal != "" {
+		if p, err := rtcProxy(cfg.LiveKitInternal); err != nil {
+			slog.Warn("livekit proxy disabled", "err", err)
+		} else {
+			s.lk = p
+		}
+	}
+	return s
+}
+
+// rtcProxy reverse-proxies livekit signaling to an upstream only this
+// process can reach. LiveKit clients dial <url>/rtc for the websocket
+// and <url>/rtc/validate as an http preflight, so the whole /rtc tree
+// is forwarded. ws schemes map onto the plain http transport.
+func rtcProxy(upstream string) (http.Handler, error) {
+	u, err := url.Parse(upstream)
+	if err != nil || u.Host == "" {
+		return nil, fmt.Errorf("bad LIVEKIT_INTERNAL_URL %q", upstream)
+	}
+	switch u.Scheme {
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
+	case "http", "https":
+	default:
+		return nil, fmt.Errorf("bad LIVEKIT_INTERNAL_URL scheme %q", u.Scheme)
+	}
+	u.Path, u.RawQuery, u.Fragment = "", "", ""
+	return httputil.NewSingleHostReverseProxy(u), nil
 }
 
 // rate falls back to the default when unset or non-positive.
@@ -68,7 +103,7 @@ func burst(perMin int) int {
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
-	r.Use(securityHeaders(s.cfg.LiveKitURL))
+	r.Use(securityHeaders(s.cfg))
 	r.Use(gzipped)
 	r.Use(cacheControl)
 
@@ -87,6 +122,13 @@ func (s *Server) Handler() http.Handler {
 		})
 	})
 	r.With(s.limited(s.socket)).Get("/ws/rooms/{room}", s.chatWS)
+
+	// bundled livekit mode: signaling rides this same origin so clients
+	// never need a second domain
+	if s.lk != nil {
+		r.Handle("/rtc", s.lk)
+		r.Handle("/rtc/*", s.lk)
+	}
 
 	r.Handle("/*", spaHandler())
 	return r
@@ -186,7 +228,7 @@ func (s *Server) getRoom(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":          id,
 		"peers":       s.hub.PeerCount(id),
-		"livekit":     s.cfg.LiveKitURL != "",
+		"livekit":     s.cfg.LiveKitURL != "" || s.lk != nil,
 		"iceServers":  s.cfg.ICEServers,
 		"maxFileSize": s.cfg.MaxFileBytes,
 	})
@@ -207,10 +249,24 @@ func (s *Server) livekitToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"url":      s.cfg.LiveKitURL,
+		"url":      s.dialURL(r),
 		"token":    tok,
 		"identity": identity,
 	})
+}
+
+// dialURL is the livekit url handed to clients. In bundled mode the
+// proxy serves signaling on this origin, so the client dials the same
+// host it loaded the app from.
+func (s *Server) dialURL(r *http.Request) string {
+	if s.lk == nil {
+		return s.cfg.LiveKitURL
+	}
+	scheme := "ws"
+	if r.TLS != nil || strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "wss"
+	}
+	return scheme + "://" + r.Host
 }
 
 func randSuffix() string {

@@ -64,6 +64,25 @@ func TestCSPIncludesLiveKitHost(t *testing.T) {
 	}
 }
 
+func TestCSPInternalLiveKit(t *testing.T) {
+	cfg := testConfig()
+	cfg.LiveKitInternal = "http://127.0.0.1:7880"
+	ts := newTestServer(t, cfg)
+	res, err := http.Get(ts.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	host := strings.TrimPrefix(ts.URL, "http://")
+	csp := res.Header.Get("Content-Security-Policy")
+	// same-origin proxy mode needs explicit ws forms for webkit
+	for _, want := range []string{"ws://" + host, "wss://" + host} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("csp should allow %s: %s", want, csp)
+		}
+	}
+}
+
 func TestCacheControl(t *testing.T) {
 	ts := newTestServer(t, testConfig())
 
