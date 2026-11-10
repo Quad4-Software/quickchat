@@ -8,7 +8,7 @@ require (
 	github.com/livekit/protocol v1.53.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.34
 	go.uber.org/goleak v1.3.0
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
